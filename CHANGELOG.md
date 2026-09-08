@@ -1,5 +1,26 @@
 # Changelog
 
+## 2026-09-08 — PDF links download; batch download as a skill
+
+**PDF/CSV links now download instead of opening** (`static/app.js`,
+`app.js?v=18`). Both used `target="_blank"`; the CSV only appeared to download
+because Chrome cannot render CSV inline, while PDFs opened in the built-in
+viewer. Both links now carry `download` (same-origin, so it is honoured) and
+the PDF label changed from "PDF ready — open" to "⬇ PDF report", EN + RU.
+
+**New `sst-download` skill** (`.claude/skills/sst-download/`) plus
+`scripts/batch_download.py`: given coordinates, names and per-point calendar
+days + years, it drives the app's own `/api/batch_job`, so the fetch path,
+series cache and report template stay the single implementation. Defaults to
+`mur_okhotsk` with PDFs on. `--dry-run` resolves and prints the dates without
+starting the job; `MM-DD` values that do not exist in a year (02-29) are
+skipped for that year with a warning.
+
+The skill records the hazard found while doing this by hand: the Data tab
+calls `prompt()` for unnamed points when PDFs are on and `alert()` on a bad
+date row, and a browser dialog freezes the Chrome extension for the rest of
+the session — so batch runs go through the API, not the UI.
+
 ## 2026-09-08 — Repointed to upwell + the health probe now reads real data
 
 **Host.** `coastwatch.pfeg.noaa.gov` has been unreachable since 17 Aug (TCP

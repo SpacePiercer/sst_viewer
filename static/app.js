@@ -138,7 +138,7 @@ const I18N = {
     row_n_dates: (n, a, b) => `${n} date(s): ${a} … ${b}`,
     lbl_also_pdf: "Also generate PDF(s)", btn_download: "⬇ Download",
     rows_bad_dates: "These coordinates have no complete dates yet:",
-    pdf_ready: "PDF ready — open", csv_ready: "⬇ combined CSV",
+    pdf_ready: "⬇ PDF report", csv_ready: "⬇ combined CSV",
     st_pending: "pending…", st_done: "done", st_error: "error",
     st_queued: "queued…", st_fetching: "fetching data…", st_rendering: "composing PDF…",
     point_name_prompt: "Geographic name for this point (used in the PDF title/header):",
@@ -213,7 +213,7 @@ const I18N = {
     row_n_dates: (n, a, b) => `дат: ${n}: ${a} … ${b}`,
     lbl_also_pdf: "Также создать PDF-отчёт(ы)", btn_download: "⬇ Скачать",
     rows_bad_dates: "У этих координат ещё нет полных дат:",
-    pdf_ready: "PDF готов — открыть", csv_ready: "⬇ общий CSV",
+    pdf_ready: "⬇ PDF-отчёт", csv_ready: "⬇ общий CSV",
     st_pending: "ожидание…", st_done: "готово", st_error: "ошибка",
     st_queued: "в очереди…", st_fetching: "загрузка данных…", st_rendering: "сборка PDF…",
     lbl_refresh_data: "Перекачать данные (игнорировать кэш)", cached_note: "из кэша, без загрузки",
@@ -1271,13 +1271,16 @@ function renderBatchResults(job) {
   $("batchProg").value = job.done; $("batchProg").max = job.total;
   const lines = job.points.map(p => {
     const cached = p.from_cache ? ` <span class="muted">(${t("cached_note")})</span>` : "";
-    if (p.pdf_url) return `<div>${p.label}: <a href="${p.pdf_url}" target="_blank">${t("pdf_ready")}</a>${cached}</div>`;
+    // `download` (not target=_blank): a PDF link would otherwise open in
+    // Chrome's viewer, while the CSV downloads only because Chrome cannot
+    // render it inline. Same-origin, so the attribute is honoured.
+    if (p.pdf_url) return `<div>${p.label}: <a href="${p.pdf_url}" download>${t("pdf_ready")}</a>${cached}</div>`;
     if (p.error) return `<div>${p.label}: ⚠ ${p.error}</div>`;
     if (p.status === "done") return `<div>${p.label}: ${t("st_done")}${cached}</div>`;
     const bars = (p.stage === "fetching" || p.stage === "rendering") ? stageBarsHtml(p) : "";
     return `<div>${p.label}: ${t(STAGE_KEY[p.stage] || "st_pending")}${bars}</div>`;
   });
-  if (job.csv_url) lines.push(`<div><a href="${job.csv_url}" target="_blank">${t("csv_ready")}</a></div>`);
+  if (job.csv_url) lines.push(`<div><a href="${job.csv_url}" download>${t("csv_ready")}</a></div>`);
   $("batchResults").innerHTML = lines.join("");
 }
 
