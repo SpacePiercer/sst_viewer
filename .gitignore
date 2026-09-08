@@ -1,0 +1,5 @@
+cache/
+__pycache__/
+library/
+areas.json
+data/oisst_may20_july1/

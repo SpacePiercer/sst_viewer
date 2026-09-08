@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>SST Viewer — Okhotsk Sea</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="splash" role="status" aria-live="polite">
+  <div class="splashField" aria-hidden="true"></div>
+  <div class="splashInner">
+    <div class="splashLogo">SST&thinsp;<span>Viewer</span></div>
+    <div class="splashSub" id="splashSub"></div>
+    <div class="splashBarWrap"><div class="splashBar" id="splashBar"></div></div>
+    <div class="splashStep" id="splashStep"></div>
+    <div class="splashTip"><span id="splashTip"></span></div>
+  </div>
+</div>
+
+<div id="map"></div>
+
+<div id="statusBar">
+  <b id="statusDataset"></b> · <span id="statusVar"></span> · <b id="statusDate"></b>
+</div>
+
+<div id="sidebar">
+  <h1>SST Viewer <button id="langBtn" title="Переключить язык / Switch language">RU</button></h1>
+
+  <div id="srcHealth" title=""></div>
+
+  <div id="tabs">
+    <button data-tab="map" data-i18n="tab_map">Map</button>
+    <button data-tab="tl" data-i18n="tab_tl">Timelapse</button>
+    <button data-tab="ab" data-i18n="tab_ab">A/B</button>
+    <button data-tab="data" data-i18n="tab_data">Data</button>
+    <button data-tab="areas" data-i18n="tab_areas">Areas</button>
+  </div>
+
+  <div class="tabPane" id="tab-map">
+    <section>
+      <div class="secHead"><b data-i18n="sec_layer">Layer</b><span class="help" data-i18n-title="help_layer">?</span></div>
+      <label><span data-i18n="lbl_dataset">Dataset</span>
+        <select id="datasetSelect"></select>
+      </label>
+      <label><span data-i18n="lbl_variable">Variable</span>
+        <select id="varSelect"></select>
+      </label>
+      <label><span data-i18n="lbl_opacity">Overlay opacity</span> <input type="range" id="opacity" min="0" max="100" value="85"></label>
+    </section>
+
+    <section>
+      <div class="secHead"><b data-i18n="sec_date">Date</b><span class="help" data-i18n-title="help_date">?</span></div>
+      <label><input type="hidden" id="dateInput"></label>
+      <div class="row">
+        <button id="prevBtn" title="←">◀</button>
+        <button id="nextBtn" title="→">▶</button>
+        <span id="dateInfo" class="muted"></span>
+      </div>
+    </section>
+
+    <section>
+      <div class="secHead"><b data-i18n="sec_scale">Color scale</b><span class="help" data-i18n-title="help_scale">?</span></div>
+      <div class="row">
+        <label class="check"><input type="radio" name="scaleMode" value="auto" checked> <span data-i18n="lbl_auto">Auto</span></label>
+        <label class="check"><input type="radio" name="scaleMode" value="fixed"> <span data-i18n="lbl_fixed">Fixed</span></label>
+      </div>
+      <div class="row">
+        <input type="number" id="vmin" step="0.5" value="-2" title="min"> <span data-i18n="lbl_to">to</span>
+        <input type="number" id="vmax" step="0.5" value="20" title="max">
+      </div>
+    </section>
+
+    <section>
+      <div class="secHead"><b data-i18n="sec_tools">Tools</b><span class="help" data-i18n-title="help_tools">?</span></div>
+      <div class="row">
+        <button id="measureBtn" data-i18n="btn_measure">📏 Measure distance</button>
+        <button id="clearMeasureBtn" title="clear">✕</button>
+      </div>
+      <div class="row">
+        <button id="downloadOverlayBtn" data-i18n="btn_overlaypng" data-i18n-title="help_overlaypng">Download overlay PNG</button>
+      </div>
+    </section>
+  </div>
+
+  <div class="tabPane hidden" id="tab-tl">
+    <section>
+      <div class="secHead"><b data-i18n="sec_timelapse">Timelapse</b><span class="help" data-i18n-title="help_timelapse">?</span></div>
+      <div class="row">
+        <span data-i18n="lbl_from">from</span> <input type="hidden" id="tlStart">
+        <span data-i18n="lbl_to">to</span> <input type="hidden" id="tlEnd">
+      </div>
+      <div class="row">
+        <span data-i18n="lbl_gap">step, days</span> <input type="number" id="gapDays" min="1" value="1" style="width:4em">
+        <span class="help" data-i18n-title="help_gap">?</span>
+        <span data-i18n="lbl_fps">fps</span> <input type="number" id="fps" min="0.5" max="20" step="0.5" value="4" style="width:4em">
+      </div>
+      <label class="check"><input type="checkbox" id="sameDayYear"> <span data-i18n="lbl_sameday">same day each year</span>
+        <span class="help" data-i18n-title="help_sameday">?</span></label>
+      <div class="row">
+        <button id="playBtn" data-i18n="btn_play">▶ Play</button>
+        <button id="exportGifBtn" data-i18n="btn_gif" data-i18n-title="help_gif">Export GIF</button>
+      </div>
+      <span id="tlInfo" class="muted"></span>
+    </section>
+  </div>
+
+  <div class="tabPane hidden" id="tab-ab">
+    <section>
+      <div class="secHead"><b data-i18n="sec_compare">Compare two dates (A/B)</b><span class="help" data-i18n-title="help_compare">?</span></div>
+      <label class="check"><input type="checkbox" id="compareToggle"> <span data-i18n="lbl_enable">enable</span></label>
+      <div id="compareControls" class="hidden">
+        <label><span data-i18n="lbl_dateb">Date B</span> <input type="hidden" id="dateB"></label>
+        <div class="row">
+          <button id="minusYearBtn">B = A −1 <span data-i18n="lbl_yr">yr</span></button>
+          <button id="plusYearBtn">B = A +1 <span data-i18n="lbl_yr">yr</span></button>
+        </div>
+        <span class="muted" data-i18n="txt_ab">A = left, B = right. Scale is frozen while comparing.</span>
+      </div>
+    </section>
+  </div>
+
+  <div class="tabPane hidden" id="tab-data">
+    <section>
+      <div class="secHead"><b data-i18n="sec_coords">Coordinates</b><span class="help" data-i18n-title="help_coords">?</span></div>
+      <label><span data-i18n="lbl_coords_dataset">dataset</span>
+        <select id="coordsDataset"></select>
+      </label>
+      <textarea id="coordsAdd" rows="2" style="width:100%" placeholder="55.2, 150.1&#10;54.8, 149.5"></textarea>
+      <div class="row">
+        <button id="coordsAddBtn" data-i18n="btn_add_coords">+ Add</button>
+        <button id="selectAllBtn" data-i18n="btn_select_all">Select all</button>
+        <button id="deselectAllBtn" data-i18n="btn_deselect_all">Deselect all</button>
+      </div>
+      <div id="coordRows"></div>
+      <label class="check"><input type="checkbox" id="alsoPdf"> <span data-i18n="lbl_also_pdf">Also generate PDF(s)</span></label>
+      <label class="check"><input type="checkbox" id="refreshData"> <span data-i18n="lbl_refresh_data">Re-download data (ignore cache)</span></label>
+      <div class="row">
+        <button id="downloadBtn" data-i18n="btn_download">⬇ Download</button>
+      </div>
+      <progress id="batchProg" class="hidden" max="1" value="0" style="width:100%"></progress>
+      <div id="batchResults" class="muted"></div>
+    </section>
+  </div>
+
+  <div class="tabPane hidden" id="tab-areas">
+    <section>
+      <div class="secHead"><b data-i18n="sec_areas">Saved areas</b><span class="help" data-i18n-title="help_areas">?</span></div>
+      <div class="row">
+        <button id="drawPointBtn" data-i18n="btn_draw_point">• Point</button>
+        <button id="drawRectBtn" data-i18n="btn_draw_rect">▭ Rectangle</button>
+      </div>
+      <div class="row">
+        <button id="drawCircleBtn" data-i18n="btn_draw_circle">◯ Circle</button>
+        <button id="drawPolyBtn" data-i18n="btn_draw_poly">⬠ Polygon</button>
+      </div>
+      <span id="drawHint" class="muted"></span>
+      <label class="check"><input type="checkbox" id="areasToggle" checked> <span data-i18n="lbl_show_areas">show on map</span></label>
+      <div id="areaList"></div>
+    </section>
+  </div>
+</div>
+
+<div id="legend">
+  <div id="legendTitle"></div>
+  <img id="legendImg" src="/api/colorbar?var=sst" alt="">
+  <div id="legendLabels"><span id="legendMin"></span><span id="legendMax"></span></div>
+  <div class="legendKeys">
+    <span><i class="swatch ice"></i><span data-i18n="lbl_ice">ice (≥15%)</span></span>
+    <span><i class="swatch nodata"></i><span data-i18n="lbl_nodata">no data</span></span>
+  </div>
+</div>
+
+<div id="chartPanel" class="collapsed">
+  <div id="chartHeader">
+    <b data-i18n="sec_charts">Charts</b>
+    <select id="xMode">
+      <option value="date" data-i18n="x_date">x = date</option>
+      <option value="doy" data-i18n="x_doy">x = day of year (one line per year)</option>
+    </select>
+    <button id="chartPngBtn">PNG</button>
+    <button id="chartCsvBtn">CSV</button>
+    <button id="chartClearBtn" data-i18n="btn_clear">Clear</button>
+    <button id="chartCollapseBtn">▾</button>
+  </div>
+  <div id="chartLegend"></div>
+  <div id="chartBody"><canvas id="chart"></canvas></div>
+</div>
+
+<div id="swipeDivider" class="hidden"><div class="grip">⇔</div></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.9/dist/chart.umd.min.js"></script>
+<script src="app.js?v=16"></script>
+</body>
+</html>

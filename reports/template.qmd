@@ -1,0 +1,391 @@
+---
+title: "`r params$title`"
+subtitle: "`r params$subtitle`"
+author: "Georgii Kuzhel"
+format: pdf
+number-sections: true
+params:
+  title: "SST Analysis"
+  subtitle: ""
+  coords: ""
+  source: ""
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  results = 'hide',
+  message = FALSE,
+  warning = FALSE
+)
+```
+
+```{r libs}
+library(ggplot2)
+library(dplyr)
+library(lubridate)
+library(broom)
+```
+
+```{r load}
+data <- read.csv(params$source)
+data$date <- as.Date(data$date)
+data$year <- year(data$date)
+data$md <- format(data$date, "%m-%d")
+data$doy <- yday(data$date)
+data <- data[order(data$date), ]
+
+caption <- "Based on SST data fetched live via sst_viewer"
+
+# ---------------------------------------------------------------- shape
+# Every section below is gated on this profile, so that one template covers
+# any combination of dates/years the user asked for (a single day, a window
+# in one year, one day across many years, scattered non-repeating dates, ...)
+# without emitting plots that are mathematically empty.
+n_obs   <- nrow(data)
+yrs     <- sort(unique(data$year)); n_years <- length(yrs)
+mds     <- sort(unique(data$md));   n_md    <- length(mds)
+md_year_n <- tapply(data$year, data$md, function(v) length(unique(v)))
+rep_md    <- sort(names(md_year_n)[md_year_n >= 2])  # days present in >=2 years
+n_md_rep  <- length(rep_md)
+obs_per_year <- as.integer(table(data$year))
+yr_span <- max(yrs) - min(yrs) + 1
+
+# --------------------------------------------------------- capabilities
+# Thresholds, and why they are where they are:
+#   >=2 years  : any interannual comparison at all
+#   >=3 years  : lm has >=1 residual degree of freedom, so a slope CI and a
+#                p-value are defined at all (with 2 years both are NaN)
+#   >=5 years  : Mann-Kendall / Sen's slope have enough terms to be worth
+#                reporting (still low power; noted in the output)
+#   >=6 years  : a loess curve is fitting signal rather than noise
+has_anomaly     <- n_md_rep >= 1   # else anomaly == 0 for every row, by construction
+has_window      <- n_md >= 2       # a calendar window exists to plot along
+has_interannual <- n_years >= 2
+can_trend_line  <- n_years >= 3
+can_trend_test  <- n_years >= 5
+can_loess       <- n_years >= 6
+two_year_mode   <- n_years == 2
+has_spread      <- n_md >= 4 && n_years >= 2       # boxplot per year is meaningful
+has_perday      <- n_md_rep >= 1 && n_md >= 2      # per-day sections worth splitting out
+can_day_panel   <- n_md_rep >= 3 && n_years >= 3   # heatmap needs >=3 tiles to read
+
+# Human-readable record of what was left out and why -- printed in section 1 so
+# a missing section is never mistaken for a missing signal.
+notes <- character(0)
+add_note <- function(txt) notes <<- c(notes, txt)
+if (!has_anomaly)
+  add_note(sprintf("Anomaly plot omitted: no calendar day repeats across years (%d day(s), each in one year only), so the anomaly is zero for every row by construction.", n_md))
+if (!has_window)
+  add_note("Calendar-window plot omitted: only one calendar day was requested, so there is no within-year axis to plot along.")
+if (!has_interannual)
+  add_note(sprintf("All interannual (year-to-year) analyses omitted: the request covers a single year (%d).", yrs[1]))
+if (has_interannual && !can_trend_line)
+  add_note(sprintf("Linear trend line, confidence interval and p-value omitted: %d years give zero residual degrees of freedom, so both are mathematically undefined.", n_years))
+if (can_trend_line && !can_trend_test)
+  add_note(sprintf("Mann-Kendall / Sen's slope omitted: %d years is too few for a rank-based trend test to carry useful power.", n_years))
+if (can_trend_line && !can_loess)
+  add_note(sprintf("Loess (curved) smoother omitted: with %d years it would fit noise rather than trend.", n_years))
+if (has_interannual && !has_perday && n_md == 1)
+  add_note("Per-calendar-day section omitted: only one calendar day was requested, so it would duplicate the interannual trend section.")
+if (has_interannual && n_md >= 2 && n_md_rep == 0)
+  add_note("Per-calendar-day section omitted: no calendar day appears in two or more years, so no day has a trend to fit.")
+if (has_interannual && n_md_rep > 0 && n_md_rep < n_md)
+  add_note(sprintf("Per-calendar-day section covers the %d of %d day(s) that appear in two or more years; the rest occur in a single year each.", n_md_rep, n_md))
+if (!can_day_panel && n_md_rep >= 1)
+  add_note(sprintf("Daily trend-strength panel omitted: it needs at least 3 calendar days repeating across at least 3 years (here %d day(s), %d year(s)).", n_md_rep, n_years))
+
+# Year labels: one break per actual year (ggplot's default continuous breaks
+# land on fractions like 2005.0/2007.5), but a break per year collides
+# horizontally past ~10 years -- so rotate, and go vertical + smaller once a
+# long span (1982-2025 is 44 years) would still overlap at 45 degrees.
+year_text <- function(n) {
+  ang <- if (n > 25) 90 else 45
+  theme(axis.text.x = element_text(angle = ang, hjust = 1,
+                                   vjust = if (ang == 90) 0.5 else 1,
+                                   size = if (n > 25) 6 else 8))
+}
+year_axis <- function(v) list(scale_x_continuous(breaks = sort(unique(v))),
+                              year_text(length(unique(v))))
+
+# Mann-Kendall trend test + Theil-Sen slope, base R (no extra package
+# installed on this machine). Rank-based, so it does not assume normal
+# residuals and tolerates outliers -- the usual choice for short SST series.
+mk_sen <- function(x, y) {
+  n <- length(y)
+  S <- 0
+  for (i in seq_len(n - 1)) S <- S + sum(sign(y[(i + 1):n] - y[i]))
+  tie <- as.integer(table(y))
+  varS <- (n * (n - 1) * (2 * n + 5) - sum(tie * (tie - 1) * (2 * tie + 5))) / 18
+  Z <- if (S > 0) (S - 1) / sqrt(varS) else if (S < 0) (S + 1) / sqrt(varS) else 0
+  # tau-b (tie-corrected denominator); years are distinct so only y can tie.
+  # Verified to match cor.test(method="kendall") exactly.
+  n0 <- n * (n - 1) / 2
+  n2 <- sum(tie * (tie - 1) / 2)
+  tau <- if (n0 > n2) S / sqrt(n0 * (n0 - n2)) else NA_real_
+  slopes <- unlist(lapply(seq_len(n - 1),
+                          function(i) (y[(i + 1):n] - y[i]) / (x[(i + 1):n] - x[i])))
+  list(S = S, tau = tau, p = 2 * pnorm(-abs(Z)),
+       sen = median(slopes, na.rm = TRUE))
+}
+
+fmt_p <- function(p) if (is.na(p)) "n/a" else if (p < 0.001) "< 0.001" else sprintf("%.3f", p)
+```
+
+# Coordinates
+
+`r params$coords`
+
+# How to read the trend lines
+
+On some graphs you may see a `geom_smooth()` curve (wiggly, with a grey band)
+and an `lm` line (straight). Both are "best fit" lines through the data: if the
+line rises, SST is increasing along that axis; if it falls, SST is decreasing;
+flat means no clear trend.
+
+The shaded ribbon shows how uncertain the estimated *trend* is (not how
+scattered the raw points are). A narrow band means more confidence in the
+direction of change; a wide band that includes a flat line means the data do
+not rule out "no real trend" even if the best-estimate line slopes.
+
+"lm" stands for "linear model" — a straight-line fit, the simplest and most
+common trend estimator used here.
+
+\newpage
+# What this report covers
+
+```{r cover, results='asis'}
+yr_txt <- if (n_years == 1) as.character(yrs) else
+  if (n_years == yr_span) sprintf("%d-%d (%d consecutive)", min(yrs), max(yrs), n_years) else
+    sprintf("%d-%d (%d years, non-consecutive: %s)", min(yrs), max(yrs), n_years,
+            paste(yrs, collapse = ", "))
+summ <- data.frame(
+  Property = c("Observations", "Years", "Calendar days requested",
+               "Days repeating across years", "Observations per year",
+               "SST range (°C)"),
+  Value = c(as.character(n_obs), yr_txt, as.character(n_md),
+            as.character(n_md_rep),
+            if (length(unique(obs_per_year)) == 1) as.character(obs_per_year[1])
+              else sprintf("%d-%d", min(obs_per_year), max(obs_per_year)),
+            sprintf("%.2f to %.2f", min(data$sst_celsius), max(data$sst_celsius))))
+cat(knitr::kable(summ, format = "latex", booktabs = TRUE), sep = "\n")
+cat("\n\n")
+if (length(notes)) {
+  cat("\n**Analyses not included for this request, and why:**\n\n")
+  for (nte in notes) cat("*", nte, "\n")
+  cat("\n")
+} else {
+  cat("\nAll available analyses are included for this request.\n\n")
+}
+```
+
+\newpage
+# Observed SST over the requested dates
+
+```{r group1}
+plot(data$date, data$sst_celsius, main = "SST over the requested dates",
+     xlab = "Date", ylab = "SST in Celsius", sub = caption)
+```
+
+```{r group1-anom, eval=has_anomaly}
+plot(sst_anomaly ~ date, data = data,
+     main = "SST anomaly vs. same-calendar-day mean",
+     xlab = "Date", ylab = "Anomaly (°C)", sub = caption)
+```
+
+```{r cond-window, results='asis'}
+if (has_window) cat("\\newpage\n# SST across the requested calendar window\n")
+```
+
+```{r window, eval=has_window, fig.height=6}
+p <- ggplot(data, aes(x = md, y = sst_celsius))
+if (has_interannual) {
+  p <- p + aes(group = year, colour = factor(year)) + geom_point() + geom_line() +
+    labs(colour = "Year") +
+    theme(legend.text = element_text(size = 6),
+          legend.key.size = unit(0.3, "cm")) +
+    guides(colour = guide_legend(ncol = 1))
+} else {
+  p <- p + geom_point() + geom_line(aes(group = 1))
+}
+print(p + labs(title = "SST by calendar day", x = "Date (month-day)",
+               y = "SST in Celsius", caption = caption) +
+        theme(axis.text.x = element_text(angle = 30, hjust = 1)))
+```
+
+```{r cond-seasonal, results='asis'}
+# A single year with a long window has no interannual signal at all -- the
+# within-year shape is the only thing to analyse, so give it a smoother.
+if (!has_interannual && n_md >= 8)
+  cat("\\newpage\n# Within-year seasonal profile\n")
+```
+
+```{r seasonal, eval=(!has_interannual && n_md >= 8), fig.height=5}
+print(ggplot(data, aes(x = doy, y = sst_celsius)) +
+        geom_point() + geom_smooth(se = TRUE) +
+        labs(title = "Seasonal profile over the requested window",
+             x = "Day of year", y = "SST in Celsius", caption = caption))
+```
+
+```{r cond-trend, results='asis'}
+if (has_interannual) {
+  h <- if (n_md == 1) sprintf("Interannual trend on %s", mds[1]) else
+                      "Interannual trend in mean SST"
+  cat(sprintf("\\newpage\n# %s\n", h))
+}
+```
+
+```{r trend-note, eval=has_interannual, results='asis'}
+cat(sprintf(paste("Each year is reduced to its mean over the %d requested day(s)",
+                  "before fitting, so the trend is estimated from %d independent",
+                  "yearly values. Fitting the %d individual daily observations",
+                  "instead would treat highly autocorrelated readings from the",
+                  "same week as independent and overstate the significance.\n\n"),
+            n_md, n_years, n_obs))
+```
+
+```{r trend-plot, eval=has_interannual}
+ym <- data |> group_by(year) |>
+  summarise(mean_sst_celsius = mean(sst_celsius, na.rm = TRUE), .groups = "drop")
+
+# x stays NUMERIC (not factor(year)): geom_smooth on a discrete axis fits
+# against category position, so with non-consecutive years (2003, 2008, 2016,
+# 2024 -> positions 1,2,3,4) the line would space 21 years of gaps evenly and
+# report a slope per position instead of per year. year_axis() gives the same
+# every-year-labelled look while keeping the fit in real °C/year.
+base <- ggplot(ym, aes(x = year, y = mean_sst_celsius)) + geom_point(size = 2) +
+  labs(title = "Mean SST by year", x = "Year", y = "SST in Celsius",
+       caption = caption) +
+  year_axis(ym$year)
+print(base)
+if (can_trend_line) print(base + geom_smooth(method = "lm", color = "red"))
+if (can_loess)      print(base + geom_smooth())
+```
+
+```{r trend-table, eval=(has_interannual && can_trend_line), results='asis'}
+fit <- lm(mean_sst_celsius ~ year, ym)
+ci <- confint(fit)["year", ]
+sl <- coef(fit)[["year"]]
+tt <- data.frame(
+  Statistic = c("Linear slope (°C/year)", "95% CI for slope",
+                "p-value (slope = 0)", "R-squared",
+                sprintf("Total change over %d-%d", min(yrs), max(yrs)),
+                "Years used"),
+  Value = c(sprintf("%+.4f", sl), sprintf("%+.4f to %+.4f", ci[1], ci[2]),
+            fmt_p(summary(fit)$coefficients["year", 4]),
+            sprintf("%.3f", summary(fit)$r.squared),
+            sprintf("%+.2f °C", sl * (max(yrs) - min(yrs))),
+            as.character(n_years)))
+cat("\n", knitr::kable(tt, format = "latex", booktabs = TRUE,
+                       caption = "Least-squares trend fitted to yearly means"),
+    "\n", sep = "\n")
+```
+
+```{r trend-mk, eval=(has_interannual && can_trend_test), results='asis'}
+mk <- mk_sen(ym$year, ym$mean_sst_celsius)
+mt <- data.frame(
+  Statistic = c("Sen's slope (°C/year)", "Kendall's tau", "Mann-Kendall p-value",
+                sprintf("Total change over %d-%d (Sen)", min(yrs), max(yrs))),
+  Value = c(sprintf("%+.4f", mk$sen), sprintf("%+.3f", mk$tau), fmt_p(mk$p),
+            sprintf("%+.2f °C", mk$sen * (max(yrs) - min(yrs)))))
+cat("\n", knitr::kable(mt, format = "latex", booktabs = TRUE,
+                       caption = "Rank-based trend (robust to outliers and non-normal residuals)"),
+    "\n", sep = "\n")
+if (n_years < 8)
+  cat(sprintf("\nWith only %d years this test has limited power: a non-significant result here is weak evidence of *no* trend, not evidence of none.\n\n", n_years))
+```
+
+```{r trend-2yr, eval=two_year_mode, results='asis'}
+d1 <- ym$mean_sst_celsius[ym$year == yrs[1]]
+d2 <- ym$mean_sst_celsius[ym$year == yrs[2]]
+cat(sprintf(paste("\nTwo years cannot establish a trend, so this is reported as a",
+                  "difference rather than a slope: mean SST was %.2f °C in %d and",
+                  "%.2f °C in %d, a change of %+.2f °C. Add more years for a",
+                  "trend estimate.\n\n"), d1, yrs[1], d2, yrs[2], d2 - d1))
+```
+
+```{r cond-spread, results='asis'}
+if (has_spread) cat("\\newpage\n# Spread of SST within each year\n")
+```
+
+```{r spread, eval=has_spread, fig.height=5}
+print(ggplot(data, aes(x = factor(year), y = sst_celsius)) +
+        geom_boxplot(outlier.size = 0.8) +
+        labs(title = "Distribution of SST by year",
+             subtitle = sprintf("across the %d requested calendar day(s)", n_md),
+             x = "Year", y = "SST in Celsius", caption = caption) +
+        year_text(n_years))
+```
+
+```{r cond-perday, results='asis'}
+if (has_perday) cat("\\newpage\n# Per-calendar-day trends across years\n")
+```
+
+```{r perday, eval=has_perday, fig.height=4, results='asis'}
+# ponytail: one subsection per repeating calendar day; a long window (a whole
+# season) would otherwise produce hundreds of near-identical pages, so
+# subsample above this many days.
+MAX_DAY_SECTIONS <- 20
+show_md <- if (n_md_rep <= MAX_DAY_SECTIONS) rep_md else
+  rep_md[round(seq(1, n_md_rep, length.out = 10))]
+if (n_md_rep > MAX_DAY_SECTIONS)
+  cat(sprintf("\nShowing %d representative days of the %d that repeat across years.\n\n",
+              length(show_md), n_md_rep))
+
+for (k in seq_along(show_md)) {
+  m <- show_md[k]
+  sub <- data[data$md == m, ]
+  yl <- min(sub$year); yh <- max(sub$year)
+  # no \newpage before the FIRST day: the section heading above already
+  # started a page, and a second break would leave it stranded on a blank one
+  if (k > 1) cat("\\newpage\n")
+  cat(sprintf("\n\\subsection{SST on %s for years: %d-%d}\n\n", m, yl, yh))
+  p <- ggplot(sub, aes(x = year, y = sst_celsius)) + geom_point(size = 2) +
+    labs(title = sprintf("SST on %s, %d-%d", m, yl, yh),
+         x = "Year", y = "SST in Celsius", caption = caption) +
+    year_axis(sub$year)
+  print(p)
+  # blank line after each plot: without it pandoc glues consecutive images
+  # into one paragraph and lays them out side by side instead of stacked
+  cat("\n\n")
+  if (length(unique(sub$year)) >= 3) {
+    cat("\\newpage\n\n")
+    print(p + geom_smooth(method = "lm", color = "red"))
+    cat("\n\n")
+  }
+}
+```
+
+```{r cond-panel, results='asis'}
+if (can_day_panel) cat("\\newpage\n# Daily trend strength across the window\n")
+```
+
+```{r panel, eval=can_day_panel, fig.height=5}
+# filter rows to qualifying days BEFORE grouping -- group_by(md) |> filter(...)
+# leaves empty groups behind (dplyr doesn't drop a group just because a filter
+# empties it), and do(lm(...)) on an empty group errors with "0 (non-NA) cases"
+slopes_by_day <- data |>
+  filter(md %in% rep_md) |>
+  group_by(md) |>
+  do(tidy(lm(sst_celsius ~ year, data = .))) |>
+  filter(term == "year") |>
+  ungroup()
+
+# explicit print(): both calls sit inside a chunk where only the last
+# expression would auto-print, so the first plot would silently vanish
+print(ggplot(slopes_by_day, aes(x = md, y = 1, fill = estimate)) +
+  geom_tile() +
+  scale_fill_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0) +
+  labs(title = "Daily SST trend strength", x = "Date", y = NULL,
+       fill = "°C / year") +
+  theme(axis.text.y = element_blank(), axis.ticks.y = element_blank(),
+        axis.text.x = element_text(angle = 90, vjust = 0.5)))
+
+print(ggplot(slopes_by_day, aes(x = md, y = estimate)) +
+  geom_point(size = 2) +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
+  labs(title = "Linear SST trend by calendar day",
+       subtitle = "Slope of SST vs. year", x = "Date",
+       y = "Slope (°C per year)") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5)))
+```
