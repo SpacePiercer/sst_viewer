@@ -141,15 +141,6 @@ Two other bits of work ride along with it:
   a multi-second stall. Skipped entirely for sources that are down, so a dead
   host costs nothing.
 
-## Hosting it
-
-`deploy/README.md` is the runbook for putting this on a VPS behind Caddy at a
-real domain: firewall, Docker, HTTPS, the single DNS record, accounts and
-backups. `docker-compose.yml` holds the whole hardening posture — secure
-cookies, a Host allow-list, the login throttle, and PDF rendering switched off
-because the public image ships no R, Quarto or TeX. Every switch defaults to
-the development-safe value in `config.py`, so running it locally is unchanged.
-
 ## Source health
 
 Three dots under the sidebar title, answering two different questions: the

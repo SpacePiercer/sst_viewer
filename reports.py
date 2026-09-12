@@ -24,23 +24,16 @@ from pathlib import Path
 
 import pandas as pd
 
-import auth as AU
 import datasets as D
 
 HERE = Path(__file__).resolve().parent
 TEMPLATE = HERE / "reports" / "template.qmd"
-# Reports and CSVs are per-user (library/users/<name>/...); the raw series
-# cache is deliberately shared -- the numbers for a coordinate are the same for
-# everyone, and refetching them costs a download from a source that is often
-# down.
+REPORTS_DIR = D.LIBRARY / "reports"
+DOWNLOADS_DIR = D.LIBRARY / "downloads"
 SERIES_DIR = D.LIBRARY / "series"   # per-point raw series, reused across runs
-SERIES_DIR.mkdir(parents=True, exist_ok=True)
-
-
-def out_dirs(user):
-    """(reports, downloads) for one user, created on demand."""
-    base = AU.user_dir(user)
-    return base / "reports", base / "downloads"
+REPORTS_DIR.mkdir(exist_ok=True)
+DOWNLOADS_DIR.mkdir(exist_ok=True)
+SERIES_DIR.mkdir(exist_ok=True)
 
 _QUARTO_CANDIDATES = (
     r"C:\Program Files\RStudio\resources\app\bin\quarto\bin\quarto.exe",
@@ -187,8 +180,7 @@ _CHUNK_PROGRESS_RE = re.compile(r"^(\d+)/(\d+)\b")
 _RENDER_TIMEOUT_S = 180
 
 
-def render_pdf(df, lat, lon, label, ds_name, dataset_id, date_summary, user,
-               on_progress=None):
+def render_pdf(df, lat, lon, label, ds_name, dataset_id, date_summary, on_progress=None):
     """Render the shared template for one point's already-fetched frame.
     Returns the final Path under library/reports/.
 
@@ -239,7 +231,7 @@ def render_pdf(df, lat, lon, label, ds_name, dataset_id, date_summary, user,
             on_progress(1.0)
 
         safe_name = _SAFE.sub("_", label).strip("_") or "point"
-        dest = out_dirs(user)[0] / f"{safe_name}_{dataset_id}_{uuid.uuid4().hex[:6]}.pdf"
+        dest = REPORTS_DIR / f"{safe_name}_{dataset_id}_{uuid.uuid4().hex[:6]}.pdf"
         shutil.move(str(rendered), str(dest))
         return dest
     finally:
@@ -251,7 +243,7 @@ def render_pdf(df, lat, lon, label, ds_name, dataset_id, date_summary, user,
 JOBS = {}  # id -> status dict; single-user app, plain dict + daemon thread
 
 
-def start_batch_job(dataset_id, points, generate_pdf, user, refresh_data=False):
+def start_batch_job(dataset_id, points, generate_pdf, refresh_data=False):
     """points: [{"lat":, "lon":, "label":, "dates": [iso, ...]}, ...].
     Returns a job id; progress/results poll via JOBS[job_id].
 
@@ -298,9 +290,9 @@ def start_batch_job(dataset_id, points, generate_pdf, user, refresh_data=False):
                 if generate_pdf:
                     entry["stage"] = "rendering"
                     pdf = render_pdf(df, p["lat"], p["lon"], p["label"], ds.name,
-                                     dataset_id, _describe_dates(p["dates"]), user,
+                                     dataset_id, _describe_dates(p["dates"]),
                                      on_progress=lambda f: entry.__setitem__("render_frac", f))
-                    entry["pdf_url"] = f"/library/users/{user}/reports/{pdf.name}"
+                    entry["pdf_url"] = f"/library/reports/{pdf.name}"
                 entry["status"] = "done"
                 entry["stage"] = "done"
             except Exception as e:
@@ -318,10 +310,10 @@ def start_batch_job(dataset_id, points, generate_pdf, user, refresh_data=False):
                 time.sleep(_REMOTE_PACING_S)
 
         if rows:
-            csv_path = out_dirs(user)[1] / f"sst_batch_{job_id}.csv"
+            csv_path = DOWNLOADS_DIR / f"sst_batch_{job_id}.csv"
             pd.DataFrame(rows, columns=["lat", "lon", "label", "date", "value"]
                         ).to_csv(csv_path, index=False)
-            job["csv_url"] = f"/library/users/{user}/downloads/{csv_path.name}"
+            job["csv_url"] = f"/library/downloads/{csv_path.name}"
         job["state"] = "done"
 
     threading.Thread(target=worker, daemon=True).start()
