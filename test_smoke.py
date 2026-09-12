@@ -72,8 +72,13 @@ def main():
                                       "date": "2010-06-15"})
     try:
         assert any(a["id"] == area["id"] for a in A.api_areas())
-        A.api_area_rename(area["id"], payload={"name": "smoke-poly-2"})
+        A.api_area_update(area["id"], payload={"name": "smoke-poly-2"})
         assert any(a["name"] == "smoke-poly-2" for a in A.api_areas())
+        # reshaping without renaming is what the GIF crop box does
+        box = {"type": "rect", "w": 140.0, "s": 45.0, "e": 150.0, "n": 52.0}
+        A.api_area_update(area["id"], payload={"geom": box})
+        got = next(a for a in A.api_areas() if a["id"] == area["id"])
+        assert got["geom"] == box and got["name"] == "smoke-poly-2", got
         ms = D.area_mean_series("oisst_local", poly, "sst",
                                 "2010-05-20", "2010-06-05")
         assert len(ms) > 10 and ms[0]["value"] is not None, ms[:3]

@@ -3,3 +3,5 @@ __pycache__/
 library/
 areas.json
 data/oisst_may20_july1/
+
+.claude/settings.local.json

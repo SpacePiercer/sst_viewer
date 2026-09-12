@@ -1,5 +1,145 @@
 # Changelog
 
+## 2026-09-10 — Control island, preloaded timelapse with a scrubber
+
+**The status bar became the control island** (`static/index.html`,
+`static/app.js`, `app.js?v=21`). Dataset, variable and the dd/mm/yyyy date
+picker with ◀ ▶ now live in the pill above the map — the same elements, moved,
+not copies, so nothing has to be kept in sync. The Map tab keeps overlay
+opacity and the "snapped to nearest date" notice; `updateStatus()` no longer
+renders text, it pushes state into those controls.
+
+**`upwell.pfeg.noaa.gov` is not a fallback after all** (`datasets.py`, comment
+only). It answers `.das` from its own metadata cache, which is what makes it
+look alive, but it 302-redirects every *data* request to
+`coastwatch.pfeg.noaa.gov` — so when the canonical host resets the TLS
+handshake, as it is doing today and did for three weeks in Aug-Sep 2026, both
+hostnames are down. The comment promising a drop-in swap was wrong and now
+says so.
+
+**Switching dataset or variable no longer looks broken.** Three separate
+faults, all of them "nothing happens": the status line lived in the Map tab's
+sidebar, so a slow or failed switch reported itself where nobody could see it;
+a failed switch left `state.dataset` and the picker pointing at a dataset with
+no dates, which then made every later variable switch fail silently too; and
+asking a dark host for its date axis parked the UI for minutes while the
+server retried. Now `#dateInfo` sits in the island (visible from every tab,
+red on error, full text on hover), the picker is disabled while a date axis
+loads and rolls back to the previous dataset if it fails, a dataset the health
+prober already calls `down` is refused instantly with "that dataset's server
+is not answering right now", and the fetch is capped at 120 s. The variable
+list follows the dataset as it always should have -- MUR offers
+`analysed_sst` / `sea_ice_fraction`, OISST `sst` / `anom` / `err`.
+
+**Map furniture follows the open tab** (`syncMapLayers`): the GIF crop box is
+drawn only on Timelapse, the saved-area outlines only on Areas (still gated by
+that tab's "show on map" checkbox). Neither is left cluttering the data from
+the other tabs.
+
+**Island messages clear themselves.** Re-picking the dataset that is already
+selected fires no `change` event, so the "server is not answering" warning had
+nothing to clear it and sat there for good. Every writer now goes through
+`islandMsg`, which also expires an error after 8 s.
+
+**The date stamp on GIF frames is legible.** It was PIL's default bitmap font
+in plain white -- ~11 px on a 500 px frame and invisible over pale water. Now
+it scales with the frame (`width / 22`, min 14 px) in a bold system face with
+a 2 px black outline.
+
+**The GIF has its own crop box** (`static/index.html`, `static/app.js`).
+It used to be cropped to whatever the map happened to show, so the same
+animation came out a different shape every time and a stray pan put the wrong
+piece of ocean in the file. The Timelapse tab now has four editable degree
+fields (N/S/W/E), seeded from the current view, drawn on the map as a dashed
+magenta rectangle, with "from map" and "zoom to box" to move between the two.
+Any saved area can be recalled into the box from a dropdown -- its bounding
+box is what the server crops to anyway (`D.area_bbox`), so circles and
+polygons work as well as rectangles. "Draw on map" rubber-bands a rectangle
+straight into the box (`startDraw("rect", "box")` -- the existing draw tool,
+routed to the fields instead of to a new area), and the box can be saved as a
+new area, updated in place, or deleted without leaving the tab. Updating in
+place needed a real edit on the server: `PUT /api/areas/{id}` took only a
+name, so it now takes `name` and/or `geom` (`api_area_rename` ->
+`api_area_update`, covered in `test_smoke.py`). That makes a run of GIFs line
+up frame for frame. Verified end to end: two different boxes render two
+differently sized GIFs, and draw -> save -> reshape -> rename -> delete all
+round-trip through `areas.json`.
+
+**Three dots: the server, and each dataset separately** (`health.py`,
+`static/app.js`). "Is ERDDAP answering at all" and "does this dataset's data
+come through" are different questions and one dot could not say both — a
+server can serve metadata in 0.1 s while every real read hangs (PFEG,
+Sep 2026), and a single dataset can be unloaded on a healthy server. The new
+`host` source probes `/erddap/version` (20 bytes); each dataset keeps probing
+its own time axis. They lean on each other so the pair still costs ~1 request
+per tick: a dead server condemns every dataset with no further request, and a
+dataset that returns data vouches for the server with none. `/version` fires
+only when the datasets stop vouching — exactly when the distinction matters.
+A dataset marked down only by the server drops its failure backoff the moment
+the server answers again, instead of staying red for up to 15 minutes. Hover
+text now names which question each dot answers. Two new tests cover both
+directions (`test_server_down_condemns_datasets_for_free`,
+`test_dataset_down_on_a_live_server`).
+
+**The health chips link to the server's own status page.** Each remote source
+now carries a `notices` URL (`/erddap/status.html` on its host — load, uptime,
+recent failures) and the chip renders as a link to it; the hover text says so.
+It is the only outage feed that is about the machine this app actually talks
+to. (NASA's `status.earthdata.nasa.gov/api/v1/notifications` is machine-
+readable but covers the PO.DAAC side, not PFEG.)
+
+**Coordinate dots are opaque, magenta, and actually on top.** They are now
+`#ff10c8` with a 3 px white ring (`fillOpacity: 1`) — the one hue in neither
+the SST ramp (viridis) nor the anomaly ramp (blue-white-red). The real reason
+they looked washed out was the stacking order: the SST image overlay panes sat
+at z-index 401/402, *above* Leaflet's own `overlayPane` (400), so an
+85%-opaque raster was painted over every vector. The overlay panes moved to
+250/260, between the basemap tiles and the vectors — which also un-buries the
+saved-area outlines.
+
+**Timelapse loads every frame before it plays.** `preloadFrames` fetches the
+whole run three at a time behind `#tlProg` ("loading frames n/N"); playback
+starts only when the bar fills, so it never stutters on the network. The frame
+cache cap is raised to the run length for the duration (`frameCacheCap`), so
+frame 1 is still cached when a long run wraps.
+
+**A frame scrubber** (`#tlScrub`) tracks playback and is draggable at any time
+— stopped or playing — to jump to a frame; playback continues from there.
+
+**Play/Stop no longer races.** Clicking Play twice used to start a second
+interval (the button only flipped to Pause *after* the date list arrived), and
+stopping mid-fetch let the run start anyway. `tlGen` is now a cancel token:
+`stopPlay()` bumps it, and any list fetch or preload still in flight sees the
+mismatch and bails.
+
+**"Same day each year" uses the Data tab's date/year editor.** The checkbox
+swaps the from/to/step rows for the same structured dates + years form
+(`dateYearFormHtml`, shared by both tabs through `rowAt`, one pseudo-row with
+`ridx -1`), resolved by the same `parseDateSpec` and filtered to the dates the
+dataset has. Both GIF endpoints take an explicit `dates=` list in that mode
+(`/api/export/timelapse`, `/api/areas/{id}/gif`).
+
+## 2026-09-10 — Basemap trimmed, health strip shows online sources, map fits added points
+
+**Basemap is now Esri satellite only** (`static/app.js`, `app.js?v=20`), no
+layer picker. Carto "Light" serves an *API KEY REQUIRED* watermark tile
+without a paid key; Esri "Ocean depth" has no real bathymetry over the NW
+Pacific past ~z11 (every cell comes back *Map data not yet available*), and
+`maxNativeZoom` did not help because the tiles Esri does serve there are
+already those placeholders. Both removed; `L.control.layers` went with them.
+
+**The source-health dots show online datasets only.** The strip under the
+title dropped *NOAA OISST v2.1 (local)* and *PDF reports* — a local file store
+and a render toolchain are installed or not, and "reachable" says nothing
+useful about them. Filtered to `kind === "remote"` client-side; `health.py`
+still probes every source for the splash.
+
+**Coordinate rows are dots on the map.** Each row draws a blue dot with a
+permanent label above it — the row's name, or `lat, lon` until named
+(`renderCoordLayer`, redrawn on every list change). Adding coordinates also
+reframes the map: `addCoordsFromText` calls `fitCoords`, which `fitBounds`
+over every row (25% margin, `maxZoom 12`) so a new point is always in view.
+
 ## 2026-09-08 — PDF links download; batch download as a skill
 
 **PDF/CSV links now download instead of opening** (`static/app.js`,

@@ -43,7 +43,13 @@ def test_health_state():
     # per-dataset instead of per-server
     assert len(H._HOSTS) == 1, H._HOSTS
     (host, sids), = H._HOSTS.items()
-    assert sorted(sids) == ["mur_okhotsk", "oisst_remote"], sids
+    assert sorted(sids) == ["erddap_server", "mur_okhotsk", "oisst_remote"], sids
+
+    # the server itself gets its own dot: "is ERDDAP answering" is a different
+    # question from "does this dataset's data flow", and one dot cannot say both
+    srv = H._STATE["erddap_server"]
+    assert srv["kind"] == "host" and srv["host"] == host
+    assert all(H._STATE[d]["kind"] == "remote" for d in ("oisst_remote", "mur_okhotsk"))
 
     # the local source needs no network at all
     assert H._STATE["oisst_local"]["kind"] == "local"
@@ -121,26 +127,50 @@ def test_cold_sweep():
     print("ok  cold sweep resolves every source in tick 1")
 
 
-def test_cold_sweep_shares_host():
-    """...but datasets sharing a host still cost ONE request even at startup,
-    because the first probe's passive observation answers for the rest."""
+def test_server_down_condemns_datasets_for_free():
+    """A dead server answers for every dataset on it: one /version request,
+    no per-dataset probes, and the datasets say WHY they are red."""
     H._STATE.clear()
     H._HOSTS.clear()
     H._build()
-    (host, sids), = H._HOSTS.items()
     calls = []
 
-    def remote_probe(_t, sid):
+    def probe(_t, sid):
         calls.append(sid)
-        H.observe(f"https://{host}/erddap/griddap/x.das", True, 40, None)
+        if sid == "erddap_server":
+            raise OSError("connection reset")
 
     for s in H._STATE.values():
-        s["_probe"] = ((lambda _t, sid=s["id"]: remote_probe(_t, sid))
-                       if s["kind"] == "remote" else (lambda _t: None))
+        s["_probe"] = lambda _t, sid=s["id"]: probe(_t, sid)
     H._tick()
-    assert len(calls) == 1, f"cold sweep made {len(calls)} requests: {calls}"
-    assert all(H._STATE[s]["status"] == "ok" for s in sids)
-    print("ok  cold sweep still costs 1 request for a shared host")
+    assert calls == ["oisst_local", "reports", "erddap_server"], calls
+    for d in ("oisst_remote", "mur_okhotsk"):
+        assert H._STATE[d]["status"] == "down", d
+        assert H._STATE[d]["via"] == "server", H._STATE[d]["via"]
+        assert "reset" in H._STATE[d]["error"]
+    print("ok  a dead server condemns its datasets without extra requests")
+
+
+def test_dataset_down_on_a_live_server():
+    """The point of the split: one dataset can be red while the server, and
+    the other dataset, stay green."""
+    H._STATE.clear()
+    H._HOSTS.clear()
+    H._build()
+
+    def probe(_t, sid):
+        if sid == "mur_okhotsk":
+            raise OSError("dataset not loaded")
+
+    for s in H._STATE.values():
+        s["_probe"] = lambda _t, sid=s["id"]: probe(_t, sid)
+    H._tick()                                   # cold: server + both datasets
+    assert H._STATE["erddap_server"]["status"] == "ok"
+    assert H._STATE["oisst_remote"]["status"] == "ok"
+    assert H._STATE["mur_okhotsk"]["status"] == "down"
+    # a working dataset vouches for the server, so its dot costs no request
+    assert H._STATE["erddap_server"]["via"] == "traffic"
+    print("ok  a broken dataset does not condemn the server or its sibling")
 
 
 def test_probe_budget():
