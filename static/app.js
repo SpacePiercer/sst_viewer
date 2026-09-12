@@ -77,6 +77,8 @@ const I18N = {
     var_analysed_sst: "SST (°C)", var_sea_ice_fraction: "Sea-ice fraction",
     sec_scale: "Color scale", help_scale: "Auto picks the 2–98 percentile range of the current frame. Fixed uses the min/max you type — required for comparing dates or running a timelapse, otherwise colors mean different temperatures in every frame.",
     lbl_auto: "Auto", lbl_fixed: "Fixed", lbl_to: "to",
+    lbl_shared: "shared", help_shared: "Let the other accounts see this area (they can use it, but only you can change or delete it).",
+    lbl_shared_by: who => `shared by ${who}`, btn_signout: "sign out",
     ds_unavailable: "that dataset's server is not answering right now",
     sec_date: "Date", help_date: "The picker snaps to the nearest available date of the selected dataset. Use ◀ ▶ or keyboard ← → to step.",
     sec_timelapse: "Timelapse", help_timelapse: "Plays through the available dates in the chosen range like an animation.",
@@ -164,6 +166,8 @@ const I18N = {
     var_analysed_sst: "ТПМ (°C)", var_sea_ice_fraction: "Доля морского льда",
     sec_scale: "Цветовая шкала", help_scale: "«Авто» берёт диапазон 2–98 перцентилей текущего кадра. «Фикс.» использует введённые min/max — обязательно при сравнении дат и таймлапсе, иначе цвета в каждом кадре означают разные температуры.",
     lbl_auto: "Авто", lbl_fixed: "Фикс.", lbl_to: "до",
+    lbl_shared: "общая", help_shared: "Показывать эту область другим аккаунтам (менять и удалять можете только вы).",
+    lbl_shared_by: who => `общая от ${who}`, btn_signout: "выйти",
     ds_unavailable: "сервер этого набора сейчас не отвечает",
     sec_date: "Дата", help_date: "Выбор привязывается к ближайшей доступной дате выбранного набора. Листайте ◀ ▶ или клавишами ← →.",
     sec_timelapse: "Таймлапс", help_timelapse: "Проигрывает доступные даты в выбранном диапазоне как анимацию.",
@@ -267,8 +271,18 @@ const state = {
 const meta = () => state.meta[state.dataset] || { variables: {}, name: "", resolution_label: "" };
 const varLabel = v => I18N[lang]["var_" + v] ? t("var_" + v) : (meta().variables[v] || v);
 
+let me = null;   // signed-in user name
+
+// A session can expire mid-visit (30 days) or be dropped by a redeploy; every
+// call funnels through here, so one check covers the whole app.
+function bounceIfSignedOut(r) {
+  if (r.status === 401) { location.href = "/login"; return true; }
+  return false;
+}
+
 async function fetchJSON(url, opts) {
   const r = await fetch(url, opts);
+  if (bounceIfSignedOut(r)) throw new Error("signed out");
   if (!r.ok) {
     let msg = await r.text();
     try { msg = JSON.parse(msg).detail || msg; } catch (e) { /* raw text */ }
@@ -323,6 +337,7 @@ let frameCacheCap = 80;
 async function frameURL(url) {
   if (frameCache.has(url)) return frameCache.get(url);
   const r = await fetch(url);
+  if (bounceIfSignedOut(r)) throw new Error("signed out");
   if (!r.ok) throw new Error(await r.text());
   const obj = { blob: URL.createObjectURL(await r.blob()),
                 vmin: r.headers.get("X-Vmin"), vmax: r.headers.get("X-Vmax") };
@@ -906,6 +921,16 @@ function renderAreaLayer() {
     geomLayer(a.geom).bindTooltip(a.name, { className: "station-tip" }).addTo(areaLayer);
 }
 
+async function setAreaShared(a, shared) {
+  try {
+    await fetchJSON(`/api/areas/${a.id}`, {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ shared }),
+    });
+    await refreshAreas();
+  } catch (err) { alert(err.message); }
+}
+
 async function refreshAreas() {
   try { areas = await fetchJSON("/api/areas"); } catch (err) { return; }
   await Promise.all(areas.map(async a => {
@@ -943,8 +968,22 @@ function renderAreaList() {
     mk(t("btn_snapshot"), () => areaSnapshot(a, row));
     mk(t("btn_area_gif"), () => areaGif(a, row));
     mk(t("btn_area_chart"), () => areaChart(a));
-    mk("✎", () => renameArea(a));
-    mk("✕", () => deleteArea(a));
+    if (a.owner === me) {
+      mk("✎", () => renameArea(a));
+      mk("✕", () => deleteArea(a));
+      const lab = document.createElement("label");
+      lab.className = "check";
+      lab.title = t("help_shared");
+      lab.innerHTML = `<input type="checkbox" ${a.shared ? "checked" : ""}> ` +
+        `<span>${t("lbl_shared")}</span>`;
+      lab.querySelector("input").onchange = e => setAreaShared(a, e.target.checked);
+      row.appendChild(lab);
+    } else {
+      const who = document.createElement("span");
+      who.className = "muted";
+      who.textContent = t("lbl_shared_by")(a.owner);
+      row.appendChild(who);
+    }
     div.appendChild(row);
 
     const media = areaMedia[a.id] || [];
@@ -1595,6 +1634,10 @@ function chartCsv() {
 }
 
 // -------------------------------------------------------------- wire up UI
+$("signoutBtn").onclick = async () => {
+  await fetch("/api/logout", { method: "POST" });
+  location.href = "/login";
+};
 $("langBtn").onclick = () => { lang = lang === "en" ? "ru" : "en"; localStorage.setItem("sst_lang", lang); applyLang(); };
 $("datasetSelect").onchange = e => selectDataset(e.target.value);
 $("varSelect").onchange = e => { state.var = e.target.value; refreshOverlay(); };
@@ -1743,6 +1786,18 @@ async function prefetchRemoteDates() {
   $("splashSub").textContent = t("splash_sub");
   const tipTimer = startSplashTips();
   pollHealth();                // strip is live behind the splash
+
+  try {
+    me = (await fetchJSON("/api/me")).user;
+    $("whoami").textContent = me;
+    // The public server ships no R/Quarto/TeX, so hide the PDF option there
+    // rather than letting every point in a batch fail on a missing toolchain.
+    const caps = await fetchJSON("/api/capabilities");
+    if (!caps.pdf) {
+      $("alsoPdf").checked = false;
+      $("alsoPdf").closest("label").classList.add("hidden");
+    }
+  } catch { /* the 401 path has already redirected */ }
 
   const steps = [
     ["boot_sources", sub => waitFirstHealthSweep(SPLASH_HEALTH_CAP_MS, sub)],

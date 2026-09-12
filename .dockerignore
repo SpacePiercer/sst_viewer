@@ -1,0 +1,12 @@
+.git/
+__pycache__/
+*.pyc
+data/
+library/
+cache/
+_archive_pre_accounts/
+users.json
+secret.key
+areas.json
+.claude/
+reports/template.qmd

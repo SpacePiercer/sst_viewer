@@ -1,0 +1,31 @@
+# Public deployment. Every hardening switch this app has is set here, in one
+# place, rather than hidden behind `if production` branches in the code.
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    # Loopback only: the app is reachable exclusively through Caddy, so port
+    # 8000 is never exposed on the VPS's public interface.
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      SST_SECURE_COOKIES: "1"          # session cookie is HTTPS-only
+      SST_ALLOWED_HOSTS: "sst.georgiikuzhel.com"
+      SST_ENABLE_PDF: "0"              # no R/Quarto/TeX in this image
+      SST_LOGIN_MAX_FAILS: "8"
+      SST_LOGIN_LOCKOUT_S: "900"
+    volumes:
+      # State that must outlive a rebuild. The bind-mounted files must exist
+      # before the first `up` (see deploy/README).
+      - ./state/library:/app/library
+      - ./state/cache:/app/cache
+      - ./state/users.json:/app/users.json
+      - ./state/secret.key:/app/secret.key
+      - ./state/areas.json:/app/areas.json
+      # Optional: a subset of the local OISST .nc files, so the app has
+      # something to draw while coastwatch.pfeg.noaa.gov is down.
+      - ./state/oisst:/app/data/oisst_may20_july1
+    deploy:
+      resources:
+        limits:
+          memory: 3g                   # headroom on a 4 GB box

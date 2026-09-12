@@ -9,10 +9,12 @@ import threading
 import uuid
 from pathlib import Path
 
-from fastapi import Body, FastAPI, HTTPException, Query, Response
-from fastapi.responses import FileResponse
+from fastapi import Body, FastAPI, HTTPException, Query, Request, Response
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
+import auth as AU
+import config as cfg
 import datasets as D
 import health as H
 import reports as R
@@ -30,16 +32,112 @@ async def _lifespan(_app):
 app = FastAPI(title="sst_viewer", lifespan=_lifespan)
 
 
+app.state.allowed_hosts = cfg.ALLOWED_HOSTS
+
+
 @app.middleware("http")
-async def _revalidate_html(request, call_next):
-    """index.html must never be served from cache without checking: it carries
-    the `app.js?v=N` cache-buster, so a stale copy pins the browser to an old
+async def _security_headers(request: Request, call_next):
+    """Host check, then the headers a public deployment needs.
+
+    index.html must never be served from cache without checking: it carries the
+    `app.js?v=N` cache-buster, so a stale copy pins the browser to an old
     app.js forever. "no-cache" = revalidate, not "don't store" -- unchanged
-    HTML still comes back as a cheap 304."""
+    HTML still comes back as a cheap 304.
+
+    The CSP is what forces Leaflet and Chart.js to be vendored under
+    static/vendor instead of pulled from a CDN: `script-src 'self'` and a
+    third-party <script> cannot both be true. Esri tiles are the map itself, so
+    img-src names that host explicitly. HSTS is only meaningful over TLS, and
+    over plain HTTP it would strand a local dev server on a protocol it does
+    not speak."""
+    allowed = request.app.state.allowed_hosts
+    if allowed != ["*"]:
+        host = (request.headers.get("host") or "").split(":")[0]
+        if host not in allowed:
+            return JSONResponse({"detail": "unknown host"}, status_code=400)
     resp = await call_next(request)
     if resp.headers.get("content-type", "").startswith("text/html"):
         resp.headers["Cache-Control"] = "no-cache"
+    resp.headers["X-Content-Type-Options"] = "nosniff"
+    resp.headers["Referrer-Policy"] = "same-origin"
+    resp.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "img-src 'self' data: blob: https://server.arcgisonline.com; "
+        "style-src 'self' 'unsafe-inline'; script-src 'self'; "
+        "connect-src 'self'; frame-ancestors 'none'; base-uri 'none'")
+    if cfg.SECURE_COOKIES:
+        resp.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     return resp
+
+
+# Anything reachable without a session. Deliberately tiny: the login page and
+# the call that creates a session, nothing else. /api/ping stays open so a
+# monitor can see the process is alive without holding a credential.
+_OPEN_PATHS = {"/login", "/login.html", "/api/login", "/api/ping", "/favicon.ico"}
+
+
+@app.middleware("http")
+async def _require_session(request: Request, call_next):
+    """One gate for every route, instead of a dependency on each of 20-odd
+    handlers -- a route added later is then private by default rather than
+    private only if someone remembered. An API call gets 401 (the frontend can
+    react); a browser asking for a page gets bounced to the login screen."""
+    user = AU.read_cookie(request.cookies.get(AU.COOKIE))
+    request.state.user = user
+    path = request.url.path
+    if user or path in _OPEN_PATHS:
+        return await call_next(request)
+    if path.startswith("/api/") or path.startswith("/library/"):
+        return JSONResponse({"detail": "not signed in"}, status_code=401)
+    return RedirectResponse("/login", status_code=303)
+
+
+def _user(request: Request):
+    """The signed-in name. The middleware has already refused anonymous
+    callers, so reaching here without one would be a bug, not a request."""
+    user = getattr(request.state, "user", None)
+    if not user:
+        raise HTTPException(401, "not signed in")
+    return user
+
+
+@app.post("/api/login")
+def api_login(request: Request, response: Response, payload: dict = Body(...)):
+    name = (payload.get("username") or "").strip().lower()
+    keys = (f"ip:{request.client.host if request.client else '?'}", f"user:{name}")
+    if AU.login_blocked(keys):
+        # deliberately refuses the RIGHT password too: a lockout that lets a
+        # guesser through the moment they land on it is decorative
+        raise HTTPException(429, "too many attempts, try again later")
+    if not AU.verify(name, payload.get("password") or ""):
+        AU.login_failed(keys)
+        # one message for both "no such user" and "wrong password": which of
+        # the two it was is not the caller's business
+        raise HTTPException(401, "wrong user name or password")
+    AU.login_ok(keys)
+    response.set_cookie(AU.COOKIE, AU.make_cookie(name), httponly=True,
+                        secure=cfg.SECURE_COOKIES, samesite="lax",
+                        max_age=AU.TTL_DAYS * 86400, path="/")
+    return {"user": name}
+
+
+@app.get("/api/capabilities")
+def api_capabilities():
+    """What this deployment can actually do. The public image ships no R,
+    Quarto or TeX, so the frontend hides the PDF option rather than letting
+    every point in a batch fail with "quarto executable not found"."""
+    return {"pdf": cfg.ENABLE_PDF}
+
+
+@app.post("/api/logout")
+def api_logout(response: Response):
+    response.delete_cookie(AU.COOKIE, path="/")
+    return {"ok": True}
+
+
+@app.get("/api/me")
+def api_me(request: Request):
+    return {"user": _user(request)}
 
 
 @app.get("/api/ping")
@@ -146,7 +244,7 @@ def api_batch_series(payload: dict = Body(...)):
 
 
 @app.post("/api/batch_job")
-def api_batch_job(payload: dict = Body(...)):
+def api_batch_job(request: Request, payload: dict = Body(...)):
     """Start a background job: fetch each point's series for its own exact
     date list, assemble one combined CSV, and optionally render a PDF per
     point. Poll progress via /api/batch_job_status."""
@@ -155,11 +253,14 @@ def api_batch_job(payload: dict = Body(...)):
     points = payload.get("points") or []
     if not points:
         raise HTTPException(400, "no points")
+    if payload.get("generate_pdf") and not cfg.ENABLE_PDF:
+        raise HTTPException(400, "PDF rendering is not available on this server")
     for p in points:
         if not p.get("dates"):
             raise HTTPException(400, f"point {p.get('label')!r} has no dates")
     job_id = R.start_batch_job(dsid, points,
                                bool(payload.get("generate_pdf", False)),
+                               _user(request),
                                bool(payload.get("refresh_data", False)))
     return {"id": job_id}
 
@@ -234,14 +335,28 @@ def _find_area(areas, area_id):
     raise HTTPException(404, f"unknown area {area_id!r}")
 
 
+def _visible(a, user):
+    return a.get("owner") == user or a.get("shared")
+
+
+def _owned(a, user):
+    """Shared means readable, never writable -- only the owner edits or deletes.
+    403, not 404: the caller can see it in their list, so pretending it is gone
+    would just be confusing."""
+    if a.get("owner") != user:
+        raise HTTPException(403, "not yours")
+    return a
+
+
 @app.get("/api/areas")
-def api_areas():
+def api_areas(request: Request):
+    user = _user(request)
     with _AREAS_LOCK:
-        return _load_areas()
+        return [a for a in _load_areas() if _visible(a, user)]
 
 
 @app.post("/api/areas")
-def api_area_create(payload: dict = Body(...)):
+def api_area_create(request: Request, payload: dict = Body(...)):
     name = (payload.get("name") or "").strip()
     if not name:
         raise HTTPException(400, "name is required")
@@ -254,6 +369,7 @@ def api_area_create(payload: dict = Body(...)):
         raise HTTPException(400, "bad geometry")
     area = {
         "id": uuid.uuid4().hex[:8], "name": name, "geom": geom,
+        "owner": _user(request), "shared": bool(payload.get("shared")),
         "dataset": payload.get("dataset", "oisst_local"),
         "var": payload.get("var", "sst"),
         "date": payload.get("date"),
@@ -267,7 +383,7 @@ def api_area_create(payload: dict = Body(...)):
 
 
 @app.put("/api/areas/{area_id}")
-def api_area_update(area_id: str, payload: dict = Body(...)):
+def api_area_update(request: Request, area_id: str, payload: dict = Body(...)):
     """Rename and/or reshape a saved area. Either field alone is a valid edit
     -- the GIF crop box edits the geometry and leaves the name untouched."""
     name = payload.get("name")
@@ -283,24 +399,29 @@ def api_area_update(area_id: str, payload: dict = Body(...)):
             D.area_bbox(geom)  # validates required fields
         except (KeyError, ValueError, TypeError):
             raise HTTPException(400, "bad geometry")
-    if name is None and geom is None:
+    shared = payload.get("shared")
+    if name is None and geom is None and shared is None:
         raise HTTPException(400, "nothing to update")
+    user = _user(request)
     with _AREAS_LOCK:
         areas = _load_areas()
-        a = _find_area(areas, area_id)
+        a = _owned(_find_area([x for x in areas if _visible(x, user)], area_id), user)
         if name is not None:
             a["name"] = name
         if geom is not None:
             a["geom"] = geom
+        if shared is not None:
+            a["shared"] = bool(shared)
         _save_areas(areas)
     return a
 
 
 @app.delete("/api/areas/{area_id}")
-def api_area_delete(area_id: str):
+def api_area_delete(request: Request, area_id: str):
+    user = _user(request)
     with _AREAS_LOCK:
         areas = _load_areas()
-        a = _find_area(areas, area_id)
+        a = _owned(_find_area([x for x in areas if _visible(x, user)], area_id), user)
         areas.remove(a)
         _save_areas(areas)
     d = D.LIBRARY / area_id
@@ -383,5 +504,34 @@ def api_area_mean_series(area_id: str, var: str = "sst",
     return {"area": area_id, "var": var, "dataset": dataset, "points": pts}
 
 
-app.mount("/library", StaticFiles(directory=D.LIBRARY), name="library")
+@app.get("/login")
+def login_page():
+    return FileResponse(HERE / "static" / "login.html")
+
+
+@app.get("/library/{path:path}")
+def api_library(request: Request, path: str):
+    """Was a plain StaticFiles mount, i.e. every PDF and CSV readable by anyone
+    who guessed a filename. Now: signed in, and for anything under users/, it
+    has to be your own. library/series is shared on purpose -- the raw series
+    for a coordinate is the same data for everyone and expensive to refetch."""
+    user = _user(request)
+    root = D.LIBRARY.resolve()
+    target = (root / path).resolve()
+    if not target.is_relative_to(root) or not target.is_file():
+        raise HTTPException(404, "not found")          # also kills ../ escapes
+    rel = target.relative_to(root).parts
+    if rel and rel[0] == "users" and (len(rel) < 2 or rel[1] != user):
+        raise HTTPException(403, "not yours")
+    if rel and rel[0] not in ("users", "series"):
+        # snapshots and area GIFs sit in library/<area_id>/, so they inherit
+        # the area's visibility. Default-deny: a directory that is neither a
+        # user's, the shared series cache, nor a visible area is nobody's
+        # business -- that is what keeps an archive dropped into library/ from
+        # being readable by everyone.
+        with _AREAS_LOCK:
+            area = next((a for a in _load_areas() if a["id"] == rel[0]), None)
+        if not area or not _visible(area, user):
+            raise HTTPException(403, "not yours")
+    return FileResponse(target)
 app.mount("/", StaticFiles(directory=HERE / "static", html=True), name="static")

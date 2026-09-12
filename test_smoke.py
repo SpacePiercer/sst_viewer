@@ -6,7 +6,18 @@ import numpy as np
 
 import datasets as D
 import app as A
+import auth as AU
 import reports as R
+
+SMOKE_USER = "smoketest"
+
+
+class _Req:
+    """The endpoints take a Request only to read the signed-in user off it.
+    The auth path itself is covered by test_auth.py; here we just need a
+    caller identity so ownership checks pass."""
+    class state:
+        user = SMOKE_USER
 
 
 def network_ok():
@@ -67,17 +78,18 @@ def main():
     # ---- areas CRUD + polygon mean series -----------------------------------
     poly = {"type": "polygon", "latlngs": [[45.5, 146.5], [46.5, 146.5],
                                            [46.5, 148.0], [45.5, 148.0]]}
-    area = A.api_area_create(payload={"name": "smoke-poly", "geom": poly,
-                                      "dataset": "oisst_local", "var": "sst",
-                                      "date": "2010-06-15"})
+    area = A.api_area_create(_Req, payload={"name": "smoke-poly", "geom": poly,
+                                            "dataset": "oisst_local", "var": "sst",
+                                            "date": "2010-06-15"})
     try:
-        assert any(a["id"] == area["id"] for a in A.api_areas())
-        A.api_area_update(area["id"], payload={"name": "smoke-poly-2"})
-        assert any(a["name"] == "smoke-poly-2" for a in A.api_areas())
+        assert any(a["id"] == area["id"] for a in A.api_areas(_Req))
+        assert area["owner"] == SMOKE_USER and area["shared"] is False
+        A.api_area_update(_Req, area["id"], payload={"name": "smoke-poly-2"})
+        assert any(a["name"] == "smoke-poly-2" for a in A.api_areas(_Req))
         # reshaping without renaming is what the GIF crop box does
         box = {"type": "rect", "w": 140.0, "s": 45.0, "e": 150.0, "n": 52.0}
-        A.api_area_update(area["id"], payload={"geom": box})
-        got = next(a for a in A.api_areas() if a["id"] == area["id"])
+        A.api_area_update(_Req, area["id"], payload={"geom": box})
+        got = next(a for a in A.api_areas(_Req) if a["id"] == area["id"])
         assert got["geom"] == box and got["name"] == "smoke-poly-2", got
         ms = D.area_mean_series("oisst_local", poly, "sst",
                                 "2010-05-20", "2010-06-05")
@@ -87,8 +99,8 @@ def main():
                                 "2010-06-01", "2010-06-05")
         assert mc and mc[0]["value"] is not None, mc
     finally:
-        A.api_area_delete(area["id"])
-    assert all(a["id"] != area["id"] for a in A.api_areas())
+        A.api_area_delete(_Req, area["id"])
+    assert all(a["id"] != area["id"] for a in A.api_areas(_Req))
 
     # ---- PDF report for an arbitrary point (quarto render, offline) ---------
     loc_ds = D.get_dataset("oisst_local")
@@ -97,7 +109,7 @@ def main():
     frame = R.fetch_point_frame(loc_ds, 48.75, 140.20, "sst", wanted)
     assert frame is not None and len(frame) > 5, frame
     pdf = R.render_pdf(frame, 48.75, 140.20, "Tikhoye Lake (smoketest)",
-                       loc_ds.name, "oisst_local", "smoketest range")
+                       loc_ds.name, "oisst_local", "smoketest range", SMOKE_USER)
     assert pdf.exists() and pdf.stat().st_size > 20_000, pdf
     pdf.unlink()
 
@@ -105,17 +117,19 @@ def main():
     import time as _time
     points = [{"lat": 48.75, "lon": 140.20, "label": "P1", "dates": wanted[:10]},
               {"lat": 43.91, "lon": 145.81, "label": "P2", "dates": wanted[:10]}]
-    job_id = R.start_batch_job("oisst_local", points, generate_pdf=False)
+    job_id = R.start_batch_job("oisst_local", points, generate_pdf=False,
+                               user=SMOKE_USER)
     for _ in range(600):  # first oisst_local fetch per point scans ~1100 files, up to ~30s
         job = R.JOBS[job_id]
         if job["state"] == "done":
             break
         _time.sleep(0.5)
     assert job["state"] == "done" and job["done"] == 2, job
-    assert job["csv_url"] and (D.LIBRARY / "downloads" /
-                               job["csv_url"].split("/")[-1]).exists(), job
+    csv_path = R.out_dirs(SMOKE_USER)[1] / job["csv_url"].split("/")[-1]
+    assert job["csv_url"].startswith(f"/library/users/{SMOKE_USER}/"), job["csv_url"]
+    assert csv_path.exists(), job
     assert all(p["status"] == "done" for p in job["points"]), job["points"]
-    (D.LIBRARY / "downloads" / job["csv_url"].split("/")[-1]).unlink()
+    csv_path.unlink()
 
     # ---- remote datasets (skip cleanly offline) ------------------------------
     remote_msg = "skipped (offline)"
