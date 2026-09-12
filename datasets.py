@@ -47,7 +47,7 @@ from matplotlib.path import Path as MplPath
 import netCDF4
 import numpy as np
 import pandas as pd
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFont
 
 HERE = Path(__file__).resolve().parent
 OISST_DIR = HERE / "data" / "oisst_may20_july1"  # self-contained, no cross-folder deps
@@ -64,9 +64,12 @@ ICE_RGBA = (232, 244, 248, 255)      # pale ice blue-white  #e8f4f8
 NODATA_RGBA = (153, 153, 153, 255)   # mid gray             #999999
 LAND_RGBA = (0, 0, 0, 0)             # transparent, basemap shows through
 
-# upwell.pfeg.noaa.gov (161.55.160.6) is the same PFEG ERDDAP on a second
-# machine and serves byte-identical data -- a drop-in fallback if this host
-# goes down again, as it did for three weeks in Aug-Sep 2026.
+# upwell.pfeg.noaa.gov (161.55.160.6) is NOT a usable fallback, tempting as it
+# looks: it answers .das from its own metadata cache, but 302-redirects every
+# DATA request to coastwatch.pfeg.noaa.gov, so a dead canonical host takes both
+# down. Measured 2026-09-11, while coastwatch was resetting the TLS handshake
+# on every request (as it did for three weeks in Aug-Sep 2026). Nothing to
+# switch to -- when this host is dark, the remote datasets are dark.
 ERDDAP = "https://coastwatch.pfeg.noaa.gov/erddap"
 HTTP_TIMEOUT = 30             # per-socket-op seconds
 
@@ -874,6 +877,23 @@ def _gray_land(img):
     return gray
 
 
+# The frame date used to be PIL's default bitmap font in plain white -- about
+# 11 px on a 500+ px frame, and invisible over pale water. Scale it to the
+# frame and give it a black outline so it reads on ice, cloud or open sea.
+_FONT_CANDIDATES = ("C:/Windows/Fonts/segoeuib.ttf", "C:/Windows/Fonts/arialbd.ttf",
+                    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf")
+
+
+def _stamp_font(width):
+    size = max(14, round(width / 22))
+    for path in _FONT_CANDIDATES:
+        try:
+            return ImageFont.truetype(path, size)
+        except OSError:
+            continue
+    return ImageFont.load_default()
+
+
 def export_gif(dsid, dates, var, vmin, vmax, bbox=None, fps=4, out=None):
     """Animated GIF of overlay frames (land gray: no basemap in the export)."""
     ds = get_dataset(dsid)
@@ -886,7 +906,10 @@ def export_gif(dsid, dates, var, vmin, vmax, bbox=None, fps=4, out=None):
         if img.width < 500:
             k = max(1, round(500 / img.width))
             img = img.resize((img.width * k, img.height * k), Image.NEAREST)
-        ImageDraw.Draw(img).text((8, 6), d, fill=(255, 255, 255, 255))
+        pad = max(6, img.width // 60)
+        ImageDraw.Draw(img).text((pad, pad), d, font=_stamp_font(img.width),
+                                 fill=(255, 255, 255, 255), stroke_width=2,
+                                 stroke_fill=(0, 0, 0, 255))
         frames.append(img.convert("P", palette=Image.ADAPTIVE))
     if out is None:
         out = CACHE / f"timelapse_{dsid}_{dates[0]}_{dates[-1]}_{var}_{len(dates)}f.gif"

@@ -77,10 +77,18 @@ const I18N = {
     var_analysed_sst: "SST (°C)", var_sea_ice_fraction: "Sea-ice fraction",
     sec_scale: "Color scale", help_scale: "Auto picks the 2–98 percentile range of the current frame. Fixed uses the min/max you type — required for comparing dates or running a timelapse, otherwise colors mean different temperatures in every frame.",
     lbl_auto: "Auto", lbl_fixed: "Fixed", lbl_to: "to",
+    ds_unavailable: "that dataset's server is not answering right now",
     sec_date: "Date", help_date: "The picker snaps to the nearest available date of the selected dataset. Use ◀ ▶ or keyboard ← → to step.",
     sec_timelapse: "Timelapse", help_timelapse: "Plays through the available dates in the chosen range like an animation.",
     lbl_from: "from", lbl_gap: "step, days", help_gap: "How many calendar days to jump each frame (snapping to the nearest available date). 1 = every day. 365 ≈ the same day next year (use the checkbox below for a leap-safe version).",
     lbl_fps: "fps", lbl_sameday: "same day each year", help_sameday: "Show the same month/day (taken from the 'from' date) in every year of the range — e.g. every June 1 from 2000 to 2025.",
+    txt_island: "Dataset, variable and date are set in the bar above the map.",
+    tl_loading: "loading frames", tl_spec_bad: "fill in the day/month and year fields",
+    sec_gifbox: "GIF area", help_gifbox: "The rectangle the exported GIF is cropped to, in degrees. Seeded from the current map view; edit the numbers, or pick a saved area to reuse exactly the same frame again. Save the box as an area to keep it for later.",
+    opt_box_custom: "— custom box —", btn_box_from_map: "⤢ from map", btn_box_to_map: "zoom to box",
+    btn_box_save: "💾 Save as new", ph_box_name: "name", box_need_name: "type a name for the area first",
+    btn_box_draw: "▭ Draw on map", btn_box_update: "⤴ Update selected",
+    btn_box_delete: "🗑 Delete", box_need_saved: "pick a saved area first",
     btn_play: "▶ Play", btn_pause: "⏸ Pause", btn_gif: "Export GIF", help_gif: "The server renders a GIF of the current timelapse settings, cropped to the visible map area. Land is gray in the GIF (no basemap).",
     tab_map: "Map", tab_tl: "Timelapse", tab_ab: "A/B", tab_data: "Data", tab_areas: "Areas",
     hl_ok: "reachable", hl_slow: "reachable but slow", hl_down: "unreachable",
@@ -88,6 +96,10 @@ const I18N = {
     hl_tool_ok: "available", hl_tool_down: "NOT INSTALLED",
     hl_via_probe: "health probe", hl_via_traffic: "seen by a real request",
     hl_noserver: "source status unavailable (app server not responding)",
+    hl_notices: "click to open this server's own status page (load, uptime, recent failures)",
+    hl_via_server: "the server itself is not answering",
+    hl_role_server: "the ERDDAP server: does it answer at all?",
+    hl_role_dataset: "this dataset: does its data actually come through?",
     splash_sub: "Okhotsk Sea · sea-surface temperature",
     boot_sources: "Checking data sources…", boot_datasets: "Loading datasets…",
     boot_map: "Rendering the first map…", boot_areas: "Restoring saved areas…",
@@ -152,10 +164,18 @@ const I18N = {
     var_analysed_sst: "ТПМ (°C)", var_sea_ice_fraction: "Доля морского льда",
     sec_scale: "Цветовая шкала", help_scale: "«Авто» берёт диапазон 2–98 перцентилей текущего кадра. «Фикс.» использует введённые min/max — обязательно при сравнении дат и таймлапсе, иначе цвета в каждом кадре означают разные температуры.",
     lbl_auto: "Авто", lbl_fixed: "Фикс.", lbl_to: "до",
+    ds_unavailable: "сервер этого набора сейчас не отвечает",
     sec_date: "Дата", help_date: "Выбор привязывается к ближайшей доступной дате выбранного набора. Листайте ◀ ▶ или клавишами ← →.",
     sec_timelapse: "Таймлапс", help_timelapse: "Проигрывает доступные даты в выбранном диапазоне как анимацию.",
     lbl_from: "с", lbl_gap: "шаг, дней", help_gap: "На сколько календарных дней прыгать каждый кадр (с привязкой к ближайшей доступной дате). 1 = каждый день. 365 ≈ тот же день следующего года (для точности лучше галочка ниже).",
     lbl_fps: "кадр/с", lbl_sameday: "тот же день каждый год", help_sameday: "Показывать одно и то же число (месяц/день берутся из даты «с») в каждом году диапазона — например, каждое 1 июня с 2000 по 2025.",
+    txt_island: "Набор данных, переменная и дата задаются в полосе над картой.",
+    tl_loading: "загрузка кадров", tl_spec_bad: "заполните поля дня/месяца и года",
+    sec_gifbox: "Область GIF", help_gifbox: "Прямоугольник, по которому обрезается экспортируемый GIF, в градусах. Заполняется по текущему виду карты; измените числа или выберите сохранённую область, чтобы повторить тот же кадр. Кнопка сохранения кладёт рамку в список областей.",
+    opt_box_custom: "— своя рамка —", btn_box_from_map: "⤢ с карты", btn_box_to_map: "показать рамку",
+    btn_box_save: "💾 Сохранить новую", ph_box_name: "название", box_need_name: "сначала введите название области",
+    btn_box_draw: "▭ Нарисовать", btn_box_update: "⤴ Обновить выбранную",
+    btn_box_delete: "🗑 Удалить", box_need_saved: "сначала выберите сохранённую область",
     btn_play: "▶ Пуск", btn_pause: "⏸ Пауза", btn_gif: "Экспорт GIF", help_gif: "Сервер собирает GIF с текущими настройками таймлапса, обрезанный по видимой области карты. Суша в GIF серая (без подложки).",
     tab_map: "Карта", tab_tl: "Таймлапс", tab_ab: "A/B", tab_data: "Данные", tab_areas: "Области",
     hl_ok: "доступен", hl_slow: "доступен, но медленно", hl_down: "недоступен",
@@ -163,6 +183,10 @@ const I18N = {
     hl_tool_ok: "доступно", hl_tool_down: "НЕ УСТАНОВЛЕНО",
     hl_via_probe: "проверка состояния", hl_via_traffic: "по реальному запросу",
     hl_noserver: "состояние источников недоступно (сервер приложения не отвечает)",
+    hl_notices: "нажмите, чтобы открыть страницу состояния самого сервера (нагрузка, аптайм, последние сбои)",
+    hl_via_server: "сам сервер не отвечает",
+    hl_role_server: "сервер ERDDAP: отвечает ли он вообще?",
+    hl_role_dataset: "этот набор данных: доходят ли сами данные?",
     splash_sub: "Охотское море · температура поверхности моря",
     boot_sources: "Проверка источников данных…", boot_datasets: "Загрузка наборов данных…",
     boot_map: "Отрисовка первой карты…", boot_areas: "Восстановление сохранённых областей…",
@@ -227,11 +251,13 @@ const t = key => I18N[lang][key] ?? I18N.en[key] ?? key;
 function applyLang() {
   document.querySelectorAll("[data-i18n]").forEach(el => { el.textContent = t(el.dataset.i18n); });
   document.querySelectorAll("[data-i18n-title]").forEach(el => { el.title = t(el.dataset.i18nTitle); });
+  document.querySelectorAll("[data-i18n-placeholder]").forEach(el => { el.placeholder = t(el.dataset.i18nPlaceholder); });
+  rebuildGifAreaSelect();
   $("langBtn").textContent = lang === "en" ? "RU" : "EN";
   if (state.playing) $("playBtn").textContent = t("btn_pause");
   rebuildVarSelect(); updateLegend(); updateStatus();
   if (chart) { chart.options.scales.y.title.text = t("yaxis"); chart.update(); }
-  renderAreaList(); renderCoordRows();
+  renderAreaList(); renderRows();
 }
 
 const state = {
@@ -255,23 +281,20 @@ async function fetchJSON(url, opts) {
 const MLAT = 85.05112878; // overlay PNGs are Mercator-resampled to this limit
 const map = L.map("map", { center: [50, 148], zoom: 5, worldCopyJump: true });
 
-const baseLayers = {
-  "Satellite / Спутник (Esri)": L.tileLayer(
-    "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-    { attribution: "Esri World Imagery", maxZoom: 17 }),
-  "Ocean depth / Глубины (Esri)": L.tileLayer(
-    "https://server.arcgisonline.com/ArcGIS/rest/services/Ocean/World_Ocean_Base/MapServer/tile/{z}/{y}/{x}",
-    { attribution: "Esri Ocean Basemap", maxZoom: 13 }),
-  "Light / Светлая (Carto)": L.tileLayer(
-    "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
-    { attribution: "&copy; OpenStreetMap, &copy; CARTO", maxZoom: 19 }),
-};
-baseLayers["Ocean depth / Глубины (Esri)"].addTo(map);
-L.control.layers(baseLayers, null, { position: "topleft" }).addTo(map);
+// Esri World Imagery is the only basemap. Carto "Light" now needs a paid API
+// key (serves an "API KEY REQUIRED" tile without one) and Esri's Ocean
+// bathymetry has no real tiles over the NW Pacific past ~z11 -- every cell
+// comes back "Map data not yet available". With one layer there is no picker.
+L.tileLayer(
+  "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+  { attribution: "Esri World Imagery", maxZoom: 17 }).addTo(map);
 L.control.scale({ imperial: false }).addTo(map);
 
-map.createPane("ovA").style.zIndex = 401;
-map.createPane("ovB").style.zIndex = 402;
+// Between the basemap tiles (pane 200) and Leaflet's own overlayPane (400):
+// at 401/402 the SST image was painted OVER every vector -- coordinate dots and
+// saved-area outlines both came out washed under an 85%-opaque raster.
+map.createPane("ovA").style.zIndex = 250;
+map.createPane("ovB").style.zIndex = 260;
 
 // Overlay repeated on the -360/0/+360 world copies so panning never leaves it
 const WORLD_OFFS = [-360, 0, 360];
@@ -294,6 +317,9 @@ const overlayB = makeWorldOverlay("ovB");
 
 // ------------------------------------------------------- frame blob cache
 const frameCache = new Map(); // url -> {blob, vmin, vmax}
+// Raised to the frame count while a timelapse preloads, so the frames fetched
+// at the start of a long run are still there when it wraps around.
+let frameCacheCap = 80;
 async function frameURL(url) {
   if (frameCache.has(url)) return frameCache.get(url);
   const r = await fetch(url);
@@ -301,7 +327,7 @@ async function frameURL(url) {
   const obj = { blob: URL.createObjectURL(await r.blob()),
                 vmin: r.headers.get("X-Vmin"), vmax: r.headers.get("X-Vmax") };
   frameCache.set(url, obj);
-  if (frameCache.size > 80) { // ponytail: crude LRU, evict oldest insertion
+  if (frameCache.size > frameCacheCap) { // ponytail: crude LRU, evict oldest insertion
     const k = frameCache.keys().next().value;
     URL.revokeObjectURL(frameCache.get(k).blob);
     frameCache.delete(k);
@@ -326,7 +352,7 @@ async function refreshOverlay() {
   const fixed = scaleIsFixed();
   const url = overlayURL(state.date, fixed);
   const remoteWait = meta().remote && !frameCache.has(url);
-  if (remoteWait) $("dateInfo").textContent = t("remote_fetch");
+  if (remoteWait) islandMsg(t("remote_fetch"));
   try {
     const f = await frameURL(url);
     if (!fixed) {
@@ -338,9 +364,9 @@ async function refreshOverlay() {
       const fb = await frameURL(overlayURL(state.dateB, true));
       overlayB.setUrl(fb.blob);
     }
-    if (remoteWait) $("dateInfo").textContent = "";
+    if (remoteWait) islandMsg("");
   } catch (err) {
-    $("dateInfo").textContent = "⚠ " + err.message.slice(0, 200);
+    islandMsg("⚠ " + err.message.slice(0, 200), true);
   }
   updateLegend(); updateStatus();
 }
@@ -353,11 +379,28 @@ function updateLegend() {
   $("legendMax").textContent = state.vmax;
 }
 
+// The status bar holds the live dataset/variable/date controls, so "update"
+// means push state into them -- there is no separate text readout to render.
 function updateStatus() {
-  const m = meta();
-  $("statusDataset").textContent = m.name + (m.resolution_label ? ` (${m.resolution_label})` : "");
-  $("statusVar").textContent = varLabel(state.var);
-  $("statusDate").textContent = (state.date || "") + (state.comparing ? ` | B: ${state.dateB}` : "");
+  $("datasetSelect").value = state.dataset;
+  if ($("varSelect").value !== state.var) $("varSelect").value = state.var;
+  $("dateInput").value = state.date || "";
+}
+
+// One message line, in the island, where it is visible from every tab -- it
+// used to sit in the Map tab's sidebar, so a slow or failing dataset switch
+// looked like the app ignoring the click.
+let islandMsgTimer = null;
+function islandMsg(text, isError = false) {
+  const el = $("dateInfo");
+  clearTimeout(islandMsgTimer);
+  el.textContent = text;
+  el.title = text;                       // the island truncates; hover for all of it
+  el.classList.toggle("err", isError && !!text);
+  // An error about a dataset you did not end up using must not sit in the
+  // island forever -- re-picking the working dataset fires no change event,
+  // so nothing else would ever clear it.
+  if (isError && text) islandMsgTimer = setTimeout(() => islandMsg(""), 8000);
 }
 
 // -------------------------------------------------------- dataset switch
@@ -375,24 +418,45 @@ function rebuildVarSelect() {
   sel.value = state.var;
 }
 
+// Switching datasets used to look like nothing happening: the date axis of a
+// remote dataset can take a minute (or fail), and the only sign of it was a
+// message in the Map tab's sidebar, invisible from any other tab. Now the
+// island says so, the picker is locked while it loads, and a failure puts the
+// picker and the variable list back on the dataset that actually works --
+// leaving them pointing at a dataset with no dates is what made every later
+// variable switch silently do nothing too.
 async function selectDataset(id) {
   stopPlay();
-  state.dataset = id;
-  $("datasetSelect").value = id;
+  const prev = state.dataset;
   const m = state.meta[id];
+  // The health strip already knows this source is dark; asking anyway means
+  // the server spends minutes retrying a dead host while the picker sits
+  // locked, and the user learns nothing they could not have been told at once.
+  if (!m.dates && srcStatus[id] === "down") {
+    islandMsg(t("ds_unavailable"), true);
+    $("datasetSelect").value = prev;
+    return;
+  }
   if (!m.dates) {
-    $("dateInfo").textContent = t("loading_dates");
+    $("datasetSelect").disabled = true;
+    islandMsg(t("loading_dates"));
     try {
-      m.dates = (await fetchJSON(`/api/dataset_dates?dataset=${id}`)).dates;
-      $("dateInfo").textContent = "";
+      // a first remote date axis legitimately takes ~90 s; beyond that the
+      // host is not merely slow and the UI must not stay stuck on it
+      m.dates = (await fetchJSON(`/api/dataset_dates?dataset=${id}`,
+                                 { signal: AbortSignal.timeout(120000) })).dates;
+      islandMsg("");
     } catch (err) {
       m.dates = null;
-      $("dateInfo").textContent = "⚠ " + err.message.slice(0, 200);
-      state.dates = [];
-      updateStatus();
+      islandMsg("⚠ " + err.message.slice(0, 160), true);
+      $("datasetSelect").disabled = false;
+      $("datasetSelect").value = prev;       // stay on something usable
       return;
     }
+    $("datasetSelect").disabled = false;
   }
+  state.dataset = id;
+  $("datasetSelect").value = id;
   state.dates = m.dates;
   rebuildVarSelect();
   overlayA.setBounds(m.overlay_bounds);
@@ -418,7 +482,7 @@ function nearestDate(iso) {
 
 function setDate(iso, snap = true) {
   const d = snap ? nearestDate(iso) : iso;
-  $("dateInfo").textContent = (snap && d !== iso) ? I18N[lang].snapped(iso, d) : "";
+  islandMsg((snap && d !== iso) ? I18N[lang].snapped(iso, d) : "");
   state.date = d;
   $("dateInput").value = d;
   refreshOverlay();
@@ -431,38 +495,194 @@ function stepDate(dir) {
 }
 
 // -------------------------------------------------------------- timelapse
+// Every frame is fetched BEFORE playback starts (progress bar while it runs),
+// so playback itself never stutters on the network. `tlGen` is the cancel
+// token: stopPlay() bumps it, and any preload/start still in flight sees the
+// mismatch and bails -- that is what keeps a second click from starting a
+// second interval, which is the old Play/Stop bug.
+let tlDates = [], tlIdx = 0, tlTimer = null, tlGen = 0;
+
+// Timelapse dates in "same day each year" mode use the SAME structured
+// date/year editor as the Data tab (one pseudo-row, ridx -1).
+const tlRow = { dateItems: [], yearItems: [] };
+const specMode = () => $("sameDayYear").checked;
+
+async function playbackDates() {
+  if (specMode()) {
+    const dates = resolveRowDates(tlRow);
+    if (!dates) throw new Error(t("tl_spec_bad"));
+    const avail = new Set(state.dates);
+    return dates.filter(d => avail.has(d));
+  }
+  const q = `start=${$("tlStart").value}&end=${$("tlEnd").value}` +
+            `&gap=${$("gapDays").value}&dataset=${state.dataset}`;
+  return fetchJSON(`/api/playback_dates?${q}`);
+}
+
+async function preloadFrames(gen) {
+  const prog = $("tlProg");
+  prog.classList.remove("hidden");
+  prog.max = tlDates.length; prog.value = 0;
+  frameCacheCap = Math.max(80, tlDates.length + 8);
+  const queue = tlDates.slice();
+  let done = 0;
+  const worker = async () => {
+    while (queue.length && gen === tlGen) {
+      const d = queue.shift();
+      try { await frameURL(overlayURL(d, true)); } catch { /* frame stays missing */ }
+      prog.value = ++done;
+      $("tlInfo").textContent = `${t("tl_loading")} ${done}/${tlDates.length}`;
+    }
+  };
+  await Promise.all([worker(), worker(), worker()]);   // 3 at a time
+  prog.classList.add("hidden");
+  return gen === tlGen;
+}
+
+function showFrame(i) {
+  tlIdx = i;
+  $("tlScrub").value = i;
+  $("tlInfo").textContent = `${i + 1}/${tlDates.length} — ${tlDates[i]}`;
+  setDate(tlDates[i], false);
+}
+
 async function togglePlay() {
   if (state.playing) { stopPlay(); return; }
+  const gen = ++tlGen;
+  state.playing = true;                      // also freezes the color scale
+  $("playBtn").textContent = t("btn_pause");
   document.querySelector("input[name=scaleMode][value=fixed]").checked = true;
   state.vmin = +$("vmin").value; state.vmax = +$("vmax").value;
-  const q = `start=${$("tlStart").value}&end=${$("tlEnd").value}` +
-            `&gap=${$("gapDays").value}&same_day_each_year=${$("sameDayYear").checked}` +
-            `&dataset=${state.dataset}`;
-  const dates = await (await fetch(`/api/playback_dates?${q}`)).json();
-  if (dates.length < 2) { $("tlInfo").textContent = t("no_dates"); return; }
-  $("playBtn").textContent = t("btn_pause");
-  let i = 0;
-  const tick = async () => {
-    setDate(dates[i], false);
-    $("tlInfo").textContent = `${i + 1}/${dates.length}`;
-    for (let k = 1; k <= 3; k++)
-      if (dates[i + k]) frameURL(overlayURL(dates[i + k], true)).catch(() => {});
-    i = (i + 1) % dates.length;
-  };
-  tick();
-  state.playing = setInterval(tick, 1000 / +$("fps").value);
+  let dates;
+  try { dates = await playbackDates(); }
+  catch (err) { $("tlInfo").textContent = "⚠ " + err.message.slice(0, 200); stopPlay(); return; }
+  if (gen !== tlGen) return;                 // stopped while the list loaded
+  if (dates.length < 2) { $("tlInfo").textContent = t("no_dates"); stopPlay(); return; }
+  tlDates = dates;
+  const scrub = $("tlScrub");
+  scrub.max = dates.length - 1;
+  if (tlIdx > scrub.max) tlIdx = 0;
+  scrub.value = tlIdx;
+  scrub.classList.remove("hidden");
+  if (!await preloadFrames(gen)) return;
+  showFrame(tlIdx);
+  tlTimer = setInterval(() => showFrame((tlIdx + 1) % tlDates.length),
+                        1000 / +$("fps").value);
 }
+
 function stopPlay() {
-  clearInterval(state.playing); state.playing = null;
-  $("playBtn").textContent = t("btn_play"); $("tlInfo").textContent = "";
+  tlGen++;                                   // cancels an in-flight preload
+  clearInterval(tlTimer); tlTimer = null; state.playing = null;
+  $("playBtn").textContent = t("btn_play");
+  $("tlProg").classList.add("hidden");
+}
+
+// Range mode lets the server pick the frames; the date/year editor sends the
+// resolved list, so both GIF endpoints get their frames the same way playback did.
+function tlQuery() {
+  const base = `start=${$("tlStart").value}&end=${$("tlEnd").value}`;
+  return specMode()
+    ? `${base}&dates=${(resolveRowDates(tlRow) || []).join(",")}`
+    : `${base}&gap=${$("gapDays").value}`;
+}
+
+// ------------------------------------------------- GIF bounding box
+// The GIF used to be cropped to whatever the map happened to show, so the
+// same animation came out a different shape every time. It now has its own
+// box: four editable numbers, seeded from the map, and any saved area can be
+// recalled into them -- which is what makes a series of GIFs line up.
+const boxLayer = L.rectangle([[0, 0], [0, 0]],
+  { color: "#ff10c8", weight: 2, dashArray: "6,4", fillOpacity: 0.05 });
+
+function readBox() {
+  const v = id => parseFloat($(id).value);
+  let [w, s, e, n] = [v("boxW"), v("boxS"), v("boxE"), v("boxN")];
+  if ([w, s, e, n].some(Number.isNaN)) return null;
+  if (s > n) [s, n] = [n, s];
+  if (w > e) [w, e] = [e, w];
+  return { w, s: Math.max(-90, s), e, n: Math.min(90, n) };
+}
+
+function drawBox() {
+  const b = readBox();
+  const onTab = localStorage.getItem("sst_tab") === "tl";
+  if (!b || !onTab) { map.removeLayer(boxLayer); return; }
+  boxLayer.setBounds([[b.s, b.w], [b.n, b.e]]).addTo(map);
+}
+
+function writeBox(b) {
+  $("boxW").value = b.w.toFixed(2); $("boxS").value = b.s.toFixed(2);
+  $("boxE").value = b.e.toFixed(2); $("boxN").value = b.n.toFixed(2);
+  drawBox();
+}
+
+function boxFromMap() {
+  const b = map.getBounds();
+  writeBox({ w: b.getWest(), s: b.getSouth(), e: b.getEast(), n: b.getNorth() });
+}
+
+// Any saved shape can drive the box -- its bounding box is what the server
+// crops to anyway (D.area_bbox), so a circle or polygon works as well as a rect.
+function rebuildGifAreaSelect(keep) {
+  const sel = $("gifArea");
+  if (!sel) return;
+  const cur = keep ?? sel.value;
+  sel.innerHTML = `<option value="">${t("opt_box_custom")}</option>` +
+    areas.map(a => `<option value="${a.id}">${SHAPE_ICON[a.geom.type] || ""} ${escHtml(a.name)}</option>`).join("");
+  sel.value = areas.some(a => a.id === cur) ? cur : "";
+}
+
+async function boxApi(url, opts, keep) {
+  try {
+    const a = await fetchJSON(url, opts);
+    await refreshAreas();
+    rebuildGifAreaSelect(keep === undefined ? a.id : keep);
+    $("boxHint").textContent = "";
+    return a;
+  } catch (err) { $("boxHint").textContent = "⚠ " + err.message.slice(0, 200); }
+}
+
+const jsonBody = body => ({ method: "PUT", headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify(body) });
+
+async function saveBoxAsArea() {
+  const b = readBox();
+  const name = $("boxName").value.trim();
+  if (!b || !name) { $("boxHint").textContent = t("box_need_name"); return; }
+  const a = await boxApi("/api/areas", {
+    ...jsonBody({ name, geom: { type: "rect", ...b },
+                  dataset: state.dataset, var: state.var, date: state.date,
+                  vmin: state.vmin, vmax: state.vmax }), method: "POST" });
+  if (a) $("boxName").value = "";
+}
+
+// Reshaping a saved area in place is what keeps a GIF series lined up after a
+// tweak -- saving a second "... v2" area would defeat the point.
+async function updateSelectedArea() {
+  const id = $("gifArea").value, b = readBox();
+  if (!id || !b) { $("boxHint").textContent = t("box_need_saved"); return; }
+  const name = $("boxName").value.trim();
+  await boxApi(`/api/areas/${id}`,
+               jsonBody(name ? { name, geom: { type: "rect", ...b } }
+                             : { geom: { type: "rect", ...b } }), id);
+  $("boxName").value = "";
+}
+
+async function deleteSelectedArea() {
+  const id = $("gifArea").value;
+  if (!id) { $("boxHint").textContent = t("box_need_saved"); return; }
+  const a = areas.find(x => x.id === id);
+  if (!confirm(I18N[lang].confirm_delete(a.name))) return;
+  await boxApi(`/api/areas/${id}`, { method: "DELETE" }, "");
 }
 
 function exportGif() {
-  const b = map.getBounds();
-  const bbox = [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()]
-    .map(x => x.toFixed(2)).join(",");
-  const u = `/api/export/timelapse?start=${$("tlStart").value}&end=${$("tlEnd").value}` +
-    `&gap=${$("gapDays").value}&same_day_each_year=${$("sameDayYear").checked}` +
+  const b = readBox() || (() => {
+    const m = map.getBounds();
+    return { w: m.getWest(), s: m.getSouth(), e: m.getEast(), n: m.getNorth() };
+  })();
+  const bbox = [b.w, b.s, b.e, b.n].map(x => x.toFixed(2)).join(",");
+  const u = `/api/export/timelapse?${tlQuery()}` +
     `&var=${state.var}&vmin=${$("vmin").value}&vmax=${$("vmax").value}` +
     `&fps=${$("fps").value}&bbox=${bbox}&dataset=${state.dataset}`;
   $("tlInfo").textContent = t("rendering");
@@ -561,16 +781,20 @@ function measureClick(latlng) {
 
 // ------------------------------------------------------------ draw shapes
 let draw = null; // {type, pts:[LatLng], layer}
+// Where a finished shape goes: null = save it as a new area (the Areas tab),
+// "box" = feed the GIF crop box instead of saving anything.
+let drawInto = null;
 const DRAW_STYLE = { color: "#b10dc9", weight: 2, dashArray: "5,5", fillOpacity: 0.08 };
 
 function normLon(lng) { return ((lng + 180) % 360 + 360) % 360 - 180; }
 
-function startDraw(type) {
+function startDraw(type, into = null) {
   setMeasuring(false); clearMeasure(); cancelDraw();
   draw = { type, pts: [], layer: null };
+  drawInto = into;
   map.getContainer().style.cursor = "crosshair";
   map.doubleClickZoom.disable();
-  $("drawHint").textContent = t("hint_" + type);
+  $(into === "box" ? "boxHint" : "drawHint").textContent = t("hint_" + type);
 }
 
 function cancelDraw() {
@@ -580,6 +804,7 @@ function cancelDraw() {
   map.getContainer().style.cursor = "";
   map.doubleClickZoom.enable();
   $("drawHint").textContent = "";
+  $("boxHint").textContent = "";
 }
 
 function setDrawLayer(layer) {
@@ -628,7 +853,14 @@ function closePolygon() {
 }
 
 async function finishDraw(geom) {
+  const into = drawInto;
+  drawInto = null;
   cancelDraw();
+  if (into === "box") {                    // feeds the GIF crop box, saves nothing
+    writeBox({ w: geom.w, s: geom.s, e: geom.e, n: geom.n });
+    $("gifArea").value = "";
+    return;
+  }
   const name = prompt(t("area_name_prompt"));
   if (!name || !name.trim()) return;
   try {
@@ -645,7 +877,7 @@ async function finishDraw(geom) {
 // ------------------------------------------------------------ saved areas
 let areas = [];
 const areaMedia = {}; // id -> [{name,size}]
-const areaLayer = L.layerGroup().addTo(map);
+const areaLayer = L.layerGroup();   // added/removed by syncMapLayers
 const SHAPE_ICON = { point: "•", rect: "▭", circle: "◯", polygon: "⬠" };
 
 function areaBounds(g) {
@@ -680,7 +912,7 @@ async function refreshAreas() {
     try { areaMedia[a.id] = await fetchJSON(`/api/areas/${a.id}/media`); }
     catch (err) { areaMedia[a.id] = []; }
   }));
-  renderAreaList(); renderAreaLayer();
+  renderAreaList(); renderAreaLayer(); rebuildGifAreaSelect();
 }
 
 function renderAreaList() {
@@ -771,9 +1003,8 @@ async function areaGif(a, row) {
   busy(row, true);
   $("drawHint").textContent = t("generating");
   try {
-    await fetchJSON(`/api/areas/${a.id}/gif?dataset=${state.dataset}` +
-      `&start=${$("tlStart").value}&end=${$("tlEnd").value}&gap=${$("gapDays").value}` +
-      `&same_day_each_year=${$("sameDayYear").checked}&var=${state.var}` +
+    await fetchJSON(`/api/areas/${a.id}/gif?dataset=${state.dataset}&${tlQuery()}` +
+      `&var=${state.var}` +
       `&vmin=${$("vmin").value}&vmax=${$("vmax").value}&fps=${$("fps").value}`,
       { method: "POST" });
     await refreshAreas();
@@ -1047,6 +1278,28 @@ const coordsDs = () => $("coordsDataset").value;
 // name: geographic name for this point, used as the PDF title/header ("" until named)
 let coordRows = [];
 
+// Every coordinate row is a dot on the map with a permanent label above it
+// (its name, or "lat, lon" until named). Redrawn wholesale on every change --
+// the list is short.
+const coordLayer = L.layerGroup().addTo(map);
+const escHtml = s => String(s).replace(/[<>&]/g, c => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c]));
+
+function renderCoordLayer() {
+  coordLayer.clearLayers();
+  for (const row of coordRows) {
+    const label = row.name || `${row.lat.toFixed(3)}, ${row.lon.toFixed(3)}`;
+    // Magenta with a white ring: the one hue that appears in neither the SST
+    // ramp (viridis: purple->green->yellow) nor the anomaly ramp (blue-white-
+    // red), and the ring keeps it readable on whichever of those it lands on.
+    L.circleMarker([row.lat, row.lon],
+      { radius: 6, color: "#ffffff", weight: 3, fillColor: "#ff10c8",
+        opacity: 1, fillOpacity: 1 })
+      .bindTooltip(escHtml(label),
+        { permanent: true, direction: "top", offset: [0, -4], className: "station-tip" })
+      .addTo(coordLayer);
+  }
+}
+
 function addCoordsFromText() {
   let added = 0;
   for (const line of $("coordsAdd").value.split("\n")) {
@@ -1060,6 +1313,15 @@ function addCoordsFromText() {
   if (!added) { alert(t("coords_none")); return; }
   $("coordsAdd").value = "";
   renderCoordRows();
+  fitCoords();
+}
+
+// Frame every coordinate row so a newly added point is always visible.
+// maxZoom keeps a single point from slamming to street level.
+function fitCoords() {
+  if (!coordRows.length) return;
+  map.fitBounds(L.latLngBounds(coordRows.map(r => [r.lat, r.lon])).pad(0.25),
+                { maxZoom: 12 });
 }
 
 const fmtMD = iso => { const [, m, d] = (iso || "").split("-"); return `${d}-${m}`; };
@@ -1123,6 +1385,46 @@ function yearItemHtml(it, ridx, iidx) {
     `<span class="muted">${t("lbl_years")}</span>${rm}</div>`;
 }
 
+// The dates+years form of one row. Shared by the Data tab (ridx = the row's
+// index) and the Timelapse tab's single pseudo-row (ridx -1, see tlRow).
+function dateYearFormHtml(row, ridx) {
+  // A row's items are one kind or the other, never mixed -- once the
+  // first item picks "date"/"range" (or "year"/"yearRange"), the other
+  // add-button is hidden until the list is emptied again.
+  const dateKind = row.dateItems[0]?.type;
+  const yearKind = row.yearItems[0]?.type;
+  return `<div class="dateItems">` +
+    row.dateItems.map((it, iidx) => dateItemHtml(row, it, ridx, iidx)).join("") +
+    `</div><div class="row">` +
+    (dateKind !== "range" ? `<button class="mini" data-act="addDate" data-ridx="${ridx}">${t("btn_add_date")}</button>` : "") +
+    (dateKind !== "date" ? `<button class="mini" data-act="addRange" data-ridx="${ridx}">${t("btn_add_range")}</button>` : "") +
+    `</div>` +
+    `<div class="row muted yearsHead">${t("lbl_years_section")}</div>` +
+    `<div class="yearItems">` +
+    row.yearItems.map((it, iidx) => yearItemHtml(it, ridx, iidx)).join("") +
+    `</div><div class="row">` +
+    (yearKind !== "yearRange" ? `<button class="mini" data-act="addYear" data-ridx="${ridx}">${t("btn_add_year")}</button>` : "") +
+    (yearKind !== "year" ? `<button class="mini" data-act="addYearRange" data-ridx="${ridx}">${t("btn_add_year_range")}</button>` : "") +
+    `</div>`;
+}
+
+// ridx -1 addresses the timelapse pseudo-row, any other value a Data-tab row,
+// so one pair of handlers drives both editors.
+const rowAt = ridx => (ridx < 0 ? tlRow : coordRows[ridx]);
+
+function renderTlSpec() {
+  const box = $("tlSpec");
+  if (!box) return;
+  box.classList.toggle("hidden", !specMode());
+  box.innerHTML = specMode()
+    ? `<div class="rowForm">${dateYearFormHtml(tlRow, -1)}` +
+      `<span class="muted rowSummary">${rowSummary(tlRow)}</span></div>`
+    : "";
+  $("tlRangeRows").classList.toggle("hidden", specMode());
+}
+
+function renderRows() { renderCoordRows(); renderTlSpec(); }
+
 function renderCoordRows() {
   const box = $("coordRows");
   if (!box) return;
@@ -1137,36 +1439,20 @@ function renderCoordRows() {
       `<button class="mini" data-act="toggleExpand" data-ridx="${ridx}">${row.expanded ? "▴" : "▾"} ${t("lbl_dates")}</button>` +
       `<button class="mini" data-act="removeRow" data-ridx="${ridx}">✕</button></div>`;
     if (row.expanded) {
-      // A row's items are one kind or the other, never mixed -- once the
-      // first item picks "date"/"range" (or "year"/"yearRange"), the other
-      // add-button is hidden until the list is emptied again.
-      const dateKind = row.dateItems[0]?.type;
-      const yearKind = row.yearItems[0]?.type;
-      html += `<div class="rowForm"><div class="dateItems">` +
-        row.dateItems.map((it, iidx) => dateItemHtml(row, it, ridx, iidx)).join("") +
-        `</div><div class="row">` +
-        (dateKind !== "range" ? `<button class="mini" data-act="addDate" data-ridx="${ridx}">${t("btn_add_date")}</button>` : "") +
-        (dateKind !== "date" ? `<button class="mini" data-act="addRange" data-ridx="${ridx}">${t("btn_add_range")}</button>` : "") +
-        `</div>` +
-        `<div class="row muted yearsHead">${t("lbl_years_section")}</div>` +
-        `<div class="yearItems">` +
-        row.yearItems.map((it, iidx) => yearItemHtml(it, ridx, iidx)).join("") +
-        `</div><div class="row">` +
-        (yearKind !== "yearRange" ? `<button class="mini" data-act="addYear" data-ridx="${ridx}">${t("btn_add_year")}</button>` : "") +
-        (yearKind !== "year" ? `<button class="mini" data-act="addYearRange" data-ridx="${ridx}">${t("btn_add_year_range")}</button>` : "") +
-        `</div>`;
+      html += `<div class="rowForm">` + dateYearFormHtml(row, ridx);
       html += `<div class="row"><button class="mini" data-act="copyToChecked" data-ridx="${ridx}">${t("btn_copy_dates")}</button></div>` +
         `<span class="muted rowSummary">${rowSummary(row)}</span></div>`;
     }
     div.innerHTML = html;
     box.appendChild(div);
   });
+  renderCoordLayer();
 }
 
-$("coordRows")?.addEventListener("click", e => {
+function rowFormClick(e) {
   const b = e.target.closest("[data-act]");
   if (!b) return;
-  const ridx = +b.dataset.ridx, row = coordRows[ridx];
+  const ridx = +b.dataset.ridx, row = rowAt(ridx);
   const iidx = b.dataset.iidx !== undefined ? +b.dataset.iidx : null;
   const act = b.dataset.act;
   if (act === "toggleExpand") row.expanded = !row.expanded;
@@ -1189,13 +1475,13 @@ $("coordRows")?.addEventListener("click", e => {
       }
     });
   }
-  renderCoordRows();
-});
+  renderRows();
+}
 
-$("coordRows")?.addEventListener("change", e => {
+function rowFormChange(e) {
   const el = e.target;
   if (el.dataset.ridx === undefined) return;
-  const row = coordRows[+el.dataset.ridx];
+  const row = rowAt(+el.dataset.ridx);
   if (el.classList.contains("rowCheck")) { row.checked = el.checked; return; }
   if (el.dataset.iidx === undefined) return;
   const iidx = +el.dataset.iidx, field = el.dataset.field;
@@ -1211,8 +1497,13 @@ $("coordRows")?.addEventListener("change", e => {
   }
   it[field] = field === "step" ? Math.max(1, +el.value || 1)
     : el.type === "number" ? +el.value : el.value;
-  renderCoordRows();
-});
+  renderRows();
+}
+
+for (const id of ["coordRows", "tlSpec"]) {
+  $(id)?.addEventListener("click", rowFormClick);
+  $(id)?.addEventListener("change", rowFormChange);
+}
 
 // ------------------------------------------------------ data tab: download
 async function startDownload() {
@@ -1314,7 +1605,28 @@ $("dateInput").onchange = e => setDate(e.target.value);
 $("prevBtn").onclick = () => stepDate(-1);
 $("nextBtn").onclick = () => stepDate(1);
 $("playBtn").onclick = togglePlay;
+$("sameDayYear").onchange = () => { stopPlay(); renderTlSpec(); };
+$("tlScrub").oninput = e => { if (tlDates.length) showFrame(+e.target.value); };
+$("fps").onchange = () => { if (tlTimer) { clearInterval(tlTimer);
+  tlTimer = setInterval(() => showFrame((tlIdx + 1) % tlDates.length), 1000 / +$("fps").value); } };
 $("exportGifBtn").onclick = exportGif;
+$("gifArea").onchange = e => {
+  const a = areas.find(x => x.id === e.target.value);
+  if (!a) return;
+  const [[s, w], [n, ee]] = areaBounds(a.geom);
+  writeBox({ w, s, e: ee, n });
+};
+for (const id of ["boxW", "boxS", "boxE", "boxN"])
+  $(id).oninput = () => { $("gifArea").value = ""; drawBox(); };
+$("boxFromMapBtn").onclick = boxFromMap;
+$("boxToMapBtn").onclick = () => {
+  const b = readBox();
+  if (b) map.fitBounds([[b.s, b.w], [b.n, b.e]]);
+};
+$("boxSaveBtn").onclick = saveBoxAsArea;
+$("boxDrawBtn").onclick = () => startDraw("rect", "box");
+$("boxUpdateBtn").onclick = updateSelectedArea;
+$("boxDeleteBtn").onclick = deleteSelectedArea;
 $("coordsAddBtn").onclick = addCoordsFromText;
 $("selectAllBtn").onclick = () => { coordRows.forEach(r => r.checked = true); renderCoordRows(); };
 $("deselectAllBtn").onclick = () => { coordRows.forEach(r => r.checked = false); renderCoordRows(); };
@@ -1323,6 +1635,18 @@ function setTab(id) {
   document.querySelectorAll("#tabs button").forEach(b => b.classList.toggle("active", b.dataset.tab === id));
   document.querySelectorAll(".tabPane").forEach(p => p.classList.toggle("hidden", p.id !== "tab-" + id));
   localStorage.setItem("sst_tab", id);
+  syncMapLayers();
+}
+
+// Map furniture follows the open tab: the GIF crop box belongs to Timelapse
+// and the saved-area outlines to Areas. Leaving either on the map from every
+// other tab is just clutter over the data. The Areas tab's "show on map"
+// checkbox still wins inside its own tab.
+function syncMapLayers() {
+  const tab = localStorage.getItem("sst_tab");
+  if (tab === "tl") drawBox(); else map.removeLayer(boxLayer);
+  if (tab === "areas" && $("areasToggle").checked) areaLayer.addTo(map);
+  else map.removeLayer(areaLayer);
 }
 document.querySelectorAll("#tabs button").forEach(b => { b.onclick = () => setTab(b.dataset.tab); });
 setTab(localStorage.getItem("sst_tab") || "map");
@@ -1332,7 +1656,7 @@ $("minusYearBtn").onclick = () => shiftDateB(-1);
 $("plusYearBtn").onclick = () => shiftDateB(1);
 $("measureBtn").onclick = () => { cancelDraw(); clearMeasure(); setMeasuring(!measuring); };
 $("clearMeasureBtn").onclick = () => { setMeasuring(false); clearMeasure(); };
-$("areasToggle").onchange = e => e.target.checked ? areaLayer.addTo(map) : map.removeLayer(areaLayer);
+$("areasToggle").onchange = syncMapLayers;
 $("drawPointBtn").onclick = () => startDraw("point");
 $("drawRectBtn").onclick = () => startDraw("rect");
 $("drawCircleBtn").onclick = () => startDraw("circle");
@@ -1441,8 +1765,12 @@ async function prefetchRemoteDates() {
       const last = local.dates[local.dates.length - 1];
       $("tlStart").value = last.slice(0, 4) + "-05-20";
       $("tlEnd").value = last;
+      const lastYear = +last.slice(0, 4);
+      tlRow.dateItems = [{ type: "date", value: MD_YEAR + "-06-01" }];
+      tlRow.yearItems = [{ type: "yearRange", from: lastYear - 5, to: lastYear, step: 1 }];
+      renderTlSpec();
     }],
-    ["boot_map", () => selectDataset("oisst_local")],
+    ["boot_map", async () => { await selectDataset("oisst_local"); boxFromMap(); }],
     ["boot_areas", async () => refreshAreas()],
   ];
 
@@ -1472,6 +1800,9 @@ async function prefetchRemoteDates() {
 // free -- it never triggers an outbound request to NOAA. The actual probing
 // is rate-limited server-side (health.py).
 const HEALTH_POLL_MS = 10000;
+// id -> "ok"|"slow"|"down"|"unknown", so the dataset picker can refuse a
+// source the prober already knows is dark instead of hanging on it
+const srcStatus = {};
 
 function healthLine(s) {
   // "reachable" is wrong for a local toolchain -- it is installed or it isn't
@@ -1480,9 +1811,12 @@ function healthLine(s) {
   const bits = [t(pre + s.status)];
   if (s.latency_ms != null) bits.push(`${s.latency_ms} ms`);
   if (s.age_s != null) bits.push(`${t("hl_checked")} ${Math.round(s.age_s)}s ${t("hl_ago")}`);
-  if (s.via) bits.push(s.via === "traffic" ? t("hl_via_traffic") : t("hl_via_probe"));
+  if (s.via) bits.push(t({ traffic: "hl_via_traffic", server: "hl_via_server" }[s.via]
+                         || "hl_via_probe"));
   if (s.kind === "remote" && s.host) bits.push(s.host);
   if (s.error) bits.push("\n" + s.error);
+  bits.push("\n" + t(s.kind === "host" ? "hl_role_server" : "hl_role_dataset"));
+  if (s.notices) bits.push("\n" + t("hl_notices"));
   return `${s.name}: ${bits.join(" · ")}`;
 }
 
@@ -1490,9 +1824,17 @@ async function pollHealth() {
   const box = $("srcHealth");
   try {
     const h = await (await fetch("/api/health")).json();
+    for (const s of h.sources) srcStatus[s.id] = s.status;
     box.innerHTML = "";
-    for (const s of h.sources) {
-      const el = document.createElement("span");
+    // The ERDDAP server itself, then the datasets on it -- three dots that
+    // answer three different questions. Local files and the PDF toolchain
+    // stay out: they either work or they don't, and "reachable" says nothing
+    // useful about them.
+    for (const s of h.sources.filter(s => s.kind === "host" || s.kind === "remote")) {
+      // clickable when the source publishes a status page, a plain chip
+      // otherwise -- same look either way
+      const el = document.createElement(s.notices ? "a" : "span");
+      if (s.notices) { el.href = s.notices; el.target = "_blank"; el.rel = "noopener"; }
       el.className = "src " + s.status;
       el.title = healthLine(s);
       const dot = document.createElement("i");

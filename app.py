@@ -180,8 +180,14 @@ def api_playback_dates(start: str, end: str, gap: int = 1,
     return _remote_guard(D.playback_dates, dataset, start, end, gap, same_day_each_year)
 
 
-def _gif_params(dataset, start, end, gap, same_day_each_year, bbox):
-    dates = D.playback_dates(dataset, start, end, gap, same_day_each_year)
+def _gif_params(dataset, start, end, gap, same_day_each_year, bbox, dates=None):
+    if dates:
+        # explicit frame list (the timelapse date/year editor); keep only dates
+        # the dataset actually has, in order
+        want = set(dates.split(","))
+        dates = [d for d in D.get_dataset(dataset).dates() if d in want]
+    else:
+        dates = D.playback_dates(dataset, start, end, gap, same_day_each_year)
     if not dates:
         raise HTTPException(404, "no available dates in range")
     if len(dates) > 400:
@@ -195,10 +201,11 @@ def api_export_timelapse(start: str, end: str, var: str = "sst",
                          dataset: str = "oisst_local",
                          gap: int = 1, same_day_each_year: bool = False,
                          vmin: float = -2, vmax: float = 25, fps: float = 4,
+                         dates: str | None = Query(None, description="explicit ISO frame list"),
                          bbox: str | None = Query(None, description="west,south,east,north")):
     _ds(dataset)
     dates, bb = _remote_guard(_gif_params, dataset, start, end, gap,
-                              same_day_each_year, bbox)
+                              same_day_each_year, bbox, dates)
     gif = _remote_guard(D.export_gif, dataset, dates, var, vmin, vmax, bb, fps)
     return FileResponse(gif, media_type="image/gif", filename=gif.name)
 
@@ -260,14 +267,31 @@ def api_area_create(payload: dict = Body(...)):
 
 
 @app.put("/api/areas/{area_id}")
-def api_area_rename(area_id: str, payload: dict = Body(...)):
-    name = (payload.get("name") or "").strip()
-    if not name:
-        raise HTTPException(400, "name is required")
+def api_area_update(area_id: str, payload: dict = Body(...)):
+    """Rename and/or reshape a saved area. Either field alone is a valid edit
+    -- the GIF crop box edits the geometry and leaves the name untouched."""
+    name = payload.get("name")
+    geom = payload.get("geom")
+    if name is not None:
+        name = name.strip()
+        if not name:
+            raise HTTPException(400, "name must not be empty")
+    if geom is not None:
+        if geom.get("type") not in ("point", "rect", "circle", "polygon"):
+            raise HTTPException(400, "bad geometry")
+        try:
+            D.area_bbox(geom)  # validates required fields
+        except (KeyError, ValueError, TypeError):
+            raise HTTPException(400, "bad geometry")
+    if name is None and geom is None:
+        raise HTTPException(400, "nothing to update")
     with _AREAS_LOCK:
         areas = _load_areas()
         a = _find_area(areas, area_id)
-        a["name"] = name
+        if name is not None:
+            a["name"] = name
+        if geom is not None:
+            a["geom"] = geom
         _save_areas(areas)
     return a
 
@@ -331,12 +355,13 @@ def api_area_snapshot(area_id: str, date: str, var: str = "sst",
 def api_area_gif(area_id: str, start: str, end: str, var: str = "sst",
                  dataset: str = "oisst_local", gap: int = 1,
                  same_day_each_year: bool = False,
-                 vmin: float = -2, vmax: float = 25, fps: float = 4):
+                 vmin: float = -2, vmax: float = 25, fps: float = 4,
+                 dates: str | None = Query(None, description="explicit ISO frame list")):
     with _AREAS_LOCK:
         a = _find_area(_load_areas(), area_id)
     _ds(dataset)
     dates, _ = _remote_guard(_gif_params, dataset, start, end, gap,
-                             same_day_each_year, None)
+                             same_day_each_year, None, dates)
     d = D.LIBRARY / area_id
     d.mkdir(exist_ok=True)
     out = d / f"gif_{dataset}_{start}_{end}_{var}.gif"

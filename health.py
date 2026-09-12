@@ -26,6 +26,15 @@ The probe reads ONE value off the dataset's time axis. A `.das` would be
 cheaper still, but it is served from ERDDAP's metadata cache and stays green
 while the dataset's files are unreadable -- so it answers "is the server
 running", when the question is "does data flow".
+
+Both questions are worth asking, so they get their own dots: one `host` source
+probing `/erddap/version` (is the server answering at all?) and one `remote`
+source per dataset probing its time axis (does this dataset's data come
+through?). They are not independent -- a dead server condemns every dataset
+without a further request, and a dataset that returns data proves the server
+is alive without one -- so the pair still costs about one request per tick in
+steady state. The /version probe fires only when the datasets stop vouching,
+which is exactly when the distinction matters.
 """
 import random
 import threading
@@ -46,6 +55,13 @@ FIRST_PROBE_TIMEOUT_S = 3
 SLOW_MS = 4000        # answered, but slow enough that the user should know
 # consecutive-failure backoff: don't hammer a source that is already down
 BACKOFF_S = (60, 120, 300, 600, 900)
+
+# ERDDAP ships a per-server status page (uptime, load, recent failures) at
+# /erddap/status.html -- the only outage signal that is about the machine this
+# app talks to rather than NOAA/NASA in general. Deliberately upwell's and not
+# the data host's: upwell is the sibling node that stays reachable when
+# coastwatch.pfeg.noaa.gov goes dark, which is exactly when someone clicks it.
+ERDDAP_STATUS_URL = "https://upwell.pfeg.noaa.gov/erddap/status.html"
 
 _LOCK = threading.RLock()
 _STATE = {}           # source id -> mutable status dict
@@ -94,14 +110,38 @@ def _quarto_probe():
     return probe
 
 
+def _server_probe():
+    """Is the ERDDAP process answering at all? /erddap/version is 20 bytes and
+    touches no dataset -- the cheapest honest answer to that question, and the
+    complement of _erddap_probe, which asks whether one dataset's DATA flows.
+    Split on purpose: a server can serve metadata in 0.1 s while every real
+    read hangs (PFEG, Sep 2026), and one dataset can be unloaded on a server
+    that is otherwise fine. One dot cannot say both."""
+    url = f"{D.ERDDAP}/version"
+
+    def probe(timeout):
+        D._http_get_raw(url, timeout=timeout)
+    return probe
+
+
 def _build():
+    host = _host_of(D.ERDDAP)
+    _STATE["erddap_server"] = {
+        "id": "erddap_server", "name": host, "kind": "host",
+        "host": host, "notices": ERDDAP_STATUS_URL,
+        "status": "unknown", "latency_ms": None, "checked": 0.0, "error": None,
+        "fails": 0, "since": time.time(), "via": None,
+        "_probe": _server_probe(), "_next": 0.0,
+    }
+    _HOSTS.setdefault(host, []).append("erddap_server")
     for ds in D.DATASETS.values():
         remote = bool(getattr(ds, "ERDDAP_ID", ""))
         host = _host_of(D.ERDDAP) if remote else None
         _STATE[ds.id] = {
             "id": ds.id, "name": ds.name,
             "kind": "remote" if remote else "local",
-            "host": host, "status": "unknown", "latency_ms": None,
+            "host": host, "notices": ERDDAP_STATUS_URL if host else None,
+            "status": "unknown", "latency_ms": None,
             "checked": 0.0, "error": None, "fails": 0,
             "since": time.time(), "via": None,
             "_probe": _erddap_probe(ds) if remote else _local_probe(ds),
@@ -170,27 +210,50 @@ def _tick():
     with _LOCK:
         due = [s for s in _STATE.values() if s["_next"] <= now]
         # local/tool checks touch no network, so they cost nothing and all run
-        free = [s for s in due if s["kind"] != "remote"]
+        free = [s for s in due if s["kind"] not in ("remote", "host")]
+        server = [s for s in due if s["kind"] == "host"]
         remote = [s for s in due if s["kind"] == "remote"]
-        # Cold start: cover EVERY never-checked remote source in this tick
-        # rather than one per 30 s. There is no real traffic to piggyback on
-        # yet and the loading screen is blocked on the result; the rate limit
-        # exists to bound sustained load, not one request per source, once.
-        # In practice this is still a single request -- sources sharing a host
-        # are resolved by the first probe's passive observation and skipped
-        # below.
+        # Cold start: cover EVERY never-checked dataset in this tick rather
+        # than one per 30 s. There is no real traffic to piggyback on yet and
+        # the loading screen is blocked on the result; the rate limit exists to
+        # bound sustained load, not one request per source, once.
         cold = [s for s in remote if not s["checked"]]
         if cold:
             batch, timeout = cold, FIRST_PROBE_TIMEOUT_S
         else:
-            # steady state: one remote probe per tick, least-recently-checked
-            # first, so N datasets on one host still cost 1 request per tick
+            # steady state: one dataset probe per tick, least-recently-checked
+            # first, so N datasets cost 1 dataset request per tick
             pick = min(remote, key=lambda s: s["checked"]) if remote else None
             batch, timeout = ([pick] if pick else []), PROBE_TIMEOUT_S
-    for st in free + batch:
+    # The server probe runs first and gates the dataset probes: if ERDDAP is
+    # not answering at all, asking each dataset the same question again only
+    # adds load to a struggling host and tells the user nothing new.
+    for st in free + server:
+        was_cold = not st["checked"]
         with _LOCK:
-            if cold and st["kind"] == "remote" and st["status"] != "unknown":
-                continue  # a sibling's probe already answered for this host
+            _PROBING.add(st["id"])
+        ok, ms, err = _run_probe(st, FIRST_PROBE_TIMEOUT_S if was_cold
+                                 else PROBE_TIMEOUT_S)
+        with _LOCK:
+            _PROBING.discard(st["id"])
+            _record(st["id"], ok, ms, err, "probe")
+            if was_cold and not ok:
+                _STATE[st["id"]]["_next"] = time.time() + TICK_S
+    with _LOCK:
+        srv = _STATE["erddap_server"]
+        if srv["status"] == "down":
+            for st in remote:
+                _record(st["id"], False, None, srv["error"], "server")
+            batch = []
+        else:
+            # A dataset last judged only by the server being down carries no
+            # dataset-level evidence, and its failure backoff can be 15 min --
+            # far too long to keep it red once ERDDAP is answering again.
+            for st in _STATE.values():
+                if st["kind"] == "remote" and st["via"] == "server":
+                    st["_next"] = 0.0
+    for st in batch:
+        with _LOCK:
             _PROBING.add(st["id"])
         # Budget up to (number of DNS addresses) x timeout here, not timeout:
         # urllib tries each address in turn with its own timeout, and
@@ -202,6 +265,15 @@ def _tick():
         with _LOCK:
             _PROBING.discard(st["id"])
             _record(st["id"], ok, ms, err, "probe")
+            if ok:
+                # A dataset that returned data PROVES the server answered, so
+                # the server dot costs nothing while things are working -- the
+                # /version probe only fires when the datasets stop vouching.
+                _record("erddap_server", True, ms, None, "traffic")
+            else:
+                # ...and when one fails, re-probe the server next tick: that is
+                # what separates "ERDDAP is down" from "this dataset is broken".
+                _STATE["erddap_server"]["_next"] = 0.0
             if cold and not ok:
                 # the short startup timeout can misjudge a merely-slow server,
                 # so confirm at full timeout on the next tick instead of

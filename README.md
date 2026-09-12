@@ -49,18 +49,32 @@ cached keeps working.
 - **Cell classes:** color ramp = valid values; pale blue-white = ice
   (concentration/fraction ≥ 15%); gray = ocean cell with no data; land
   transparent (basemap shows through; for MUR, masked cells = land).
-- **Base maps:** Esri satellite, Esri ocean/bathymetry, Carto light.
+- **Base map:** Esri satellite only (no picker). Carto "Light" now needs a
+  paid API key and Esri's ocean bathymetry has no real tiles over the NW
+  Pacific past ~z11, so both were dropped.
+- **Control island:** the pill above the map holds the live dataset, variable
+  and date pickers, plus the status line (loading, snapped-date and error
+  messages) so they are visible from every tab.
 - **Color scale:** auto (2–98 percentile per frame) or fixed min/max.
   Timelapse and A/B compare force fixed scale so frames are comparable.
-- **Timelapse:** play/pause, fps, step-days snapping to available dates,
-  "same day each year" mode (leap-safe), GIF export of the visible map region
-  (server-side, PIL — land is gray in the GIF since there's no basemap).
+- **Timelapse:** every frame is fetched before playback starts (progress bar
+  while it loads), then a scrubber tracks it and can be dragged to any frame,
+  playing or stopped. fps, step-days snapping to available dates, and a "same
+  day each year" mode that uses the Data tab's dates+years editor.
+- **GIF export:** cropped to its own box (N/S/W/E in degrees), not to whatever
+  the map happens to show — seed it from the view, draw it with the mouse, or
+  recall any saved area, so a series of GIFs lines up. The box can be saved as
+  a new area, updated in place, or deleted from the same tab. Rendered
+  server-side with PIL; land is gray (no basemap) and each frame is stamped
+  with its date.
 - **A/B swipe compare:** two dates side by side with a draggable divider.
 - **Measure:** click to add vertices, great-circle km; double-click/Esc ends.
 - **Click any ocean pixel:** values popup (per-dataset variables) + "chart
   this point" (remote datasets fetch the whole series in one ERDDAP request).
 - **Coordinates (Data tab):** paste arbitrary `lat, lon` coordinates (one per
-  line) and Add — each becomes an expandable row with its own date builder:
+  line) and Add — each coordinate shows as a labelled dot on the map (name,
+  or `lat, lon` until named), the map reframes to fit them all, and each row
+  gets its own date builder:
   add specific dates and/or date ranges (with a day step), optionally
   "repeat across years" (a year range with a step, or explicit
   non-consecutive years as chips) instead of retyping the same dates per
@@ -129,10 +143,23 @@ Two other bits of work ride along with it:
 
 ## Source health
 
-A dot per source sits under the sidebar title: green = reachable, amber =
-answering but slow (≥4 s), red = unreachable, grey = not checked yet. Hover
-for latency, age, and the last error. `GET /api/health` returns the same
-thing as JSON.
+Three dots under the sidebar title, answering two different questions: the
+**ERDDAP server** ("does it answer at all?", probed with `/erddap/version`)
+and each **dataset** on it ("does its data actually come through?", probed
+with its own time axis). A server can serve metadata in 0.1 s while every real
+read hangs, and one dataset can be unloaded on a healthy server — one dot
+could not say both. They lean on each other so the set still costs about one
+request per tick: a dead server condemns its datasets with no further request,
+and a dataset that returns data vouches for the server with none.
+
+Green = reachable, amber = answering but slow (≥4 s), red = unreachable, grey
+= not checked yet. Hover for latency, age, the last error, and which question
+that dot answers; click to open the ERDDAP server's own status page. The local
+file store and the PDF toolchain are not shown — they are installed or not.
+`GET /api/health` still returns every source as JSON.
+
+The dataset picker refuses a source the prober already calls down, instead of
+parking the UI on a host that will not answer.
 
 State comes from two places (`health.py`):
 

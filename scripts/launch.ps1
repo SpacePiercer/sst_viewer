@@ -1,3 +1,5 @@
+param([switch]$NoBrowser)   # -NoBrowser: start the server, leave the browser alone
+
 $ErrorActionPreference = "Stop"
 $viewerDir = Split-Path -Parent $PSScriptRoot   # scripts\ -> sst_viewer\
 $py = "C:\Users\Georgii\miniconda3\envs\mfa_env\python.exe"
@@ -13,26 +15,37 @@ function Test-Port {
     } catch { return $false }
 }
 
-if (Test-Port) {
-    Write-Output "sst_viewer already running at $url"
-} else {
-    New-Item -ItemType Directory -Force -Path (Join-Path $viewerDir "cache") | Out-Null
-    $log = Join-Path $viewerDir "cache\uvicorn.log"
-    $errLog = Join-Path $viewerDir "cache\uvicorn.err.log"
-    Start-Process -FilePath $py -ArgumentList "-m", "uvicorn", "app:app", "--port", "$port" `
-        -WorkingDirectory $viewerDir -WindowStyle Hidden `
-        -RedirectStandardOutput $log -RedirectStandardError $errLog
-
-    $ready = $false
-    for ($i = 0; $i -lt 30; $i++) {
+# uvicorn runs without --reload, so a server left over from before an edit is
+# still serving the old app.py / datasets.py / reports.py. Always replace it
+# rather than reusing it -- a launch means a fresh instance.
+$old = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue
+if ($old) {
+    $old.OwningProcess | Select-Object -Unique | ForEach-Object {
+        Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue
+    }
+    for ($i = 0; $i -lt 10; $i++) {
+        if (-not (Test-Port)) { break }
         Start-Sleep -Seconds 1
-        if (Test-Port) { $ready = $true; break }
     }
-    if (-not $ready) {
-        Write-Output "Server did not come up within 30s -- check $errLog"
-        exit 1
-    }
-    Write-Output "sst_viewer started at $url"
+    Write-Output "stopped the previous sst_viewer instance"
 }
 
-Start-Process $url
+New-Item -ItemType Directory -Force -Path (Join-Path $viewerDir "cache") | Out-Null
+$log = Join-Path $viewerDir "cache\uvicorn.log"
+$errLog = Join-Path $viewerDir "cache\uvicorn.err.log"
+Start-Process -FilePath $py -ArgumentList "-m", "uvicorn", "app:app", "--port", "$port" `
+    -WorkingDirectory $viewerDir -WindowStyle Hidden `
+    -RedirectStandardOutput $log -RedirectStandardError $errLog
+
+$ready = $false
+for ($i = 0; $i -lt 30; $i++) {
+    Start-Sleep -Seconds 1
+    if (Test-Port) { $ready = $true; break }
+}
+if (-not $ready) {
+    Write-Output "Server did not come up within 30s -- check $errLog"
+    exit 1
+}
+Write-Output "sst_viewer started at $url"
+
+if (-not $NoBrowser) { Start-Process $url }
