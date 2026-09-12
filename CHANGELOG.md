@@ -1,5 +1,93 @@
 # Changelog
 
+## 2026-09-12 — Ready for a public host
+
+Everything needed to put the app on `https://sst.georgiikuzhel.com` behind
+Caddy on the Hostinger VPS. The accounts feature landed earlier the same day
+was built for a *private network*; these are the gaps that answer stopped
+mattering about once the URL is public.
+
+- **`config.py`** (new) reads five environment variables, each defaulting to
+  the development-safe value, so a laptop run is unchanged and the entire
+  hardening posture is visible in `docker-compose.yml` instead of scattered
+  behind `if production` branches.
+- **Secure cookie** when `SST_SECURE_COOKIES=1`. It stays off by default
+  because a `Secure` cookie over plain HTTP is simply never sent back — the
+  login would appear to succeed and then not stick.
+- **Login throttle** (`auth.py`): scrypt costs ~100 ms a guess, which stops a
+  person and does nothing to a script left running overnight. Keyed on client
+  IP *and* user name, so one noisy address cannot lock the other two people
+  out. Past the limit even the *correct* password is refused — a lockout that
+  lets a guesser through the moment they land on it is decorative.
+- **Security headers** on every response: CSP, `nosniff`, `Referrer-Policy`,
+  and HSTS only when serving over TLS. Plus a Host allow-list, so a request
+  arriving with somebody else's `Host` gets 400.
+- **Leaflet and Chart.js are vendored** into `static/vendor/`. `script-src
+  'self'` and a CDN `<script>` cannot both be true, and a third-party CDN is an
+  avoidable supply-chain dependency for a three-person tool.
+- **`SST_ENABLE_PDF=0`** hides the "Also generate PDF(s)" checkbox (via a new
+  `/api/capabilities`) and refuses `generate_pdf` server-side. The public image
+  ships no R, Quarto or TeX, so without this every point in a batch would fail
+  with "quarto executable not found".
+- **Container**: `requirements.txt` (there was none), `Dockerfile`
+  (python:3.11-slim, non-root, no apt packages — netCDF4's wheel bundles HDF5),
+  `docker-compose.yml` publishing to `127.0.0.1:8000` only, `.dockerignore`.
+- **`deploy/README.md`**: the VPS runbook — SSH hardening, ufw, Docker, Caddy,
+  the single DNS A record, account creation, and a nightly backup of the few
+  kilobytes that actually matter (`users.json`, `secret.key`, `areas.json`,
+  `library/users/`).
+
+Six new tests in `test_auth.py` (28 total with `test_health.py`), and the whole
+production configuration was driven in Chrome locally: `/` redirects to
+`/login` signed out; `/api/areas`, `/api/health` and `/library/*` answer 401;
+an unknown `Host` gets 400; three wrong passwords then 429, with the correct
+password also refused during the lockout; `document.cookie` cannot see the
+session; `Secure` and `HttpOnly` both present when configured; no CSP
+violations, with Leaflet and Chart.js served from our own origin.
+
+Not done here, because they need the VPS and the domain: the box itself, the
+DNS record, and the three real accounts.
+
+## 2026-09-12 — Accounts
+
+**Three people, three accounts, one gate** (`auth.py`, `scripts/users.py`,
+`static/login.html`). The app authenticated nobody and served every PDF in
+`library/` to anyone who guessed a filename, which is not something to put on
+a VPS. Now:
+
+- **Passwords** are scrypt hashes with a per-user salt in a gitignored
+  `users.json`, set only through `python scripts/users.py add|passwd` at a
+  `getpass` prompt — never an argument, so they stay out of shell history,
+  `ps` and logs. `verify()` runs the KDF even for an unknown user, so response
+  time does not reveal which names exist.
+- **Sessions** are a signed cookie (`name|expiry|hmac-sha256`, HttpOnly,
+  SameSite=Lax, 30 days) with the secret in a gitignored `secret.key`.
+  Stateless on purpose: a redeploy must not sign everyone out.
+- **One middleware gates every route**, so a route added later is private by
+  default rather than private if someone remembered. `/api/*` and `/library/*`
+  answer 401; a browser asking for a page is bounced to `/login`.
+- **Areas gained `owner` and `shared`.** You see your own plus anything shared;
+  only the owner may edit or delete, shared or not. The Areas tab grows a
+  per-row "shared" toggle for your own, and names the owner on other people's.
+- **Reports and CSVs are per-user** (`library/users/<name>/reports|downloads`).
+  `library/series/` stays shared deliberately — the raw series for a coordinate
+  is identical for everyone and expensive to refetch from a source that is
+  often down.
+- `/library` stopped being a `StaticFiles` mount and became a route that
+  resolves the path inside the library root (killing `../` escapes) and
+  **default-denies**: a directory that is neither yours, the series cache, nor
+  a visible area's media is refused — which is what stops an archive dropped
+  into `library/` being readable by all three.
+
+Written test-first: `test_auth.py` states the contract in 15 tests before any
+of it existed — salted hashes and no plaintext on disk, forged/expired/truncated
+cookies, every path refused anonymously, and both ownership directions (a
+private area is unreachable by id, a shared one is readable but not writable).
+
+Migration: the 49 existing reports, 10 batch CSVs and the old `areas.json` were
+moved to `_archive_pre_accounts/` at the repo root (gitignored, outside what the
+app serves). `library/series/` was kept.
+
 ## 2026-09-10 — Control island, preloaded timelapse with a scrubber
 
 **The status bar became the control island** (`static/index.html`,
