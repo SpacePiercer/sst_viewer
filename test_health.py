@@ -38,7 +38,9 @@ def test_health_state():
     H._HOSTS.clear()
     H._build()
     ids = set(H._STATE)
-    assert {"oisst_local", "oisst_remote", "mur_okhotsk"} <= ids, ids
+    # the registry is online-only now: oisst_local is gone for good
+    assert {"oisst_remote", "mur_okhotsk"} <= ids, ids
+    assert "oisst_local" not in ids, ids
     # both ERDDAP datasets must share ONE host entry, or the rate budget is
     # per-dataset instead of per-server
     assert len(H._HOSTS) == 1, H._HOSTS
@@ -51,10 +53,9 @@ def test_health_state():
     assert srv["kind"] == "host" and srv["host"] == host
     assert all(H._STATE[d]["kind"] == "remote" for d in ("oisst_remote", "mur_okhotsk"))
 
-    # the local source needs no network at all
-    assert H._STATE["oisst_local"]["kind"] == "local"
-    ok, _, err = H._run_probe(H._STATE["oisst_local"], H.PROBE_TIMEOUT_S)
-    assert ok, err
+    # no local dataset survives: every data source is remote, and the only
+    # non-remote dot left is the quarto tool below
+    assert not [s for s in H._STATE.values() if s["kind"] == "local"], H._STATE
 
     # PDF rendering is checked up front too -- it used to surface only at the
     # END of a long batch fetch. It is not a data source, so it must not eat
@@ -109,9 +110,10 @@ def test_health_state():
 
 def test_cold_sweep():
     """The loading screen blocks on the first sweep, so tick 1 must resolve
-    EVERY source. One remote per 30 s tick would leave dots grey for a minute,
-    and the full 15 s timeout x 2 DNS addresses would leave them grey for 30 s
-    -- both are the bug this exists to prevent."""
+    EVERY source. One remote per 30 s tick would leave dots grey for a minute
+    -- that is the bug this exists to prevent. The old short cold-probe
+    timeout is gone: a slow-but-alive server used to be reported down, so
+    tick 1 now waits the full PROBE_TIMEOUT_S like every other tick."""
     H._STATE.clear()
     H._HOSTS.clear()
     H._build()
@@ -121,8 +123,8 @@ def test_cold_sweep():
     H._tick()
     assert {sid for sid, _ in seen} == set(H._STATE), seen
     assert all(s["status"] != "unknown" for s in H._STATE.values())
-    assert H.FIRST_PROBE_TIMEOUT_S < H.PROBE_TIMEOUT_S
-    assert all(t == H.FIRST_PROBE_TIMEOUT_S for sid, t in seen
+    assert not hasattr(H, "FIRST_PROBE_TIMEOUT_S"), "cold-probe shortcut is back"
+    assert all(t == H.PROBE_TIMEOUT_S for sid, t in seen
                if H._STATE[sid]["kind"] == "remote"), seen
     print("ok  cold sweep resolves every source in tick 1")
 
@@ -143,7 +145,7 @@ def test_server_down_condemns_datasets_for_free():
     for s in H._STATE.values():
         s["_probe"] = lambda _t, sid=s["id"]: probe(_t, sid)
     H._tick()
-    assert calls == ["oisst_local", "reports", "erddap_server"], calls
+    assert calls == ["reports", "erddap_server"], calls
     for d in ("oisst_remote", "mur_okhotsk"):
         assert H._STATE[d]["status"] == "down", d
         assert H._STATE[d]["via"] == "server", H._STATE[d]["via"]
@@ -230,7 +232,8 @@ if __name__ == "__main__":
     test_date_runs()
     test_health_state()
     test_cold_sweep()
-    test_cold_sweep_shares_host()
+    test_server_down_condemns_datasets_for_free()
+    test_dataset_down_on_a_live_server()
     test_probe_budget()
     test_probe_not_double_counted()
     print("all checks passed")

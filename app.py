@@ -76,10 +76,11 @@ def _remote_guard(fn, *a, **kw):
 
 @app.get("/api/datasets")
 def api_datasets():
-    # local gets its dates inline; remote date lists load lazily via
-    # /api/dataset_dates so startup never touches the network
+    # oisst_remote gets its dates inline -- the boot path needs a date axis
+    # immediately and that list is disk-cached with a 24 h TTL, so it is cheap.
+    # MUR's date list still loads lazily via /api/dataset_dates.
     return {
-        "gridded": [D.dataset_meta(ds, with_dates=(ds.id == "oisst_local"))
+        "gridded": [D.dataset_meta(ds, with_dates=(ds.id == "oisst_remote"))
                     for ds in D.DATASETS.values()],
     }
 
@@ -90,19 +91,69 @@ def api_dataset_dates(dataset: str):
     return {"id": ds.id, "dates": _remote_guard(ds.dates)}
 
 
+def _bbox(bbox):
+    """'w,s,e,n' -> (w, s, e, n) floats. 400 on anything else."""
+    if bbox is None:
+        return None
+    try:
+        w, s, e, n = (float(x) for x in bbox.split(","))
+    except ValueError:
+        raise HTTPException(400, "bbox must be 'west,south,east,north'")
+    return (w, s, e, n)
+
+
+def _bounds_hdr(b):
+    """render_overlay's 5th value -> the X-Bounds header. It is ALREADY
+    (s, w, n, e) -- Leaflet order, the same order app.js parses it back in --
+    so this only joins it. Reordering here is how the overlay ends up drawn
+    with latitude and longitude swapped."""
+    if b is None:
+        return None
+    s, w, n, e = b
+    return f"{s},{w},{n},{e}"
+
+
+def _lattice_hdr(dataset, bb):
+    """'scale,over,div' for the X-Lattice header; empty if it cannot be built."""
+    try:
+        q = D.lattice_for(dataset, bb)
+    except Exception:
+        return ""
+    return f"{q['scale']!r},{q['over']},{q['div']}"
+
+
 @app.get("/api/overlay")
-def api_overlay(date: str, var: str = "sst", dataset: str = "oisst_local",
-                vmin: float | None = None, vmax: float | None = None):
-    png, lo, hi, snapped = _remote_guard(D.render_overlay, dataset, date, var, vmin, vmax)
+def api_overlay(date: str, var: str = "sst", dataset: str = "oisst_remote",
+                vmin: float | None = None, vmax: float | None = None,
+                bbox: str | None = Query(None, description="west,south,east,north")):
+    png, lo, hi, snapped, bounds = _remote_guard(D.render_overlay, dataset, date, var,
+                                                 vmin, vmax, _bbox(bbox))
     return FileResponse(png, media_type="image/png",
                         headers={"X-Vmin": str(lo), "X-Vmax": str(hi),
                                  "X-Date": snapped,
-                                 "Access-Control-Expose-Headers": "X-Vmin, X-Vmax, X-Date",
-                                 "Cache-Control": "max-age=3600"})
+                                 "X-Bounds": _bounds_hdr(bounds) or "",
+                                 # the exact raster lattice, so the map can
+                                 # draw grid lines where the IMAGERY's cell
+                                 # boundaries are rather than where they
+                                 # mathematically belong -- see lattice_for()
+                                 "X-Lattice": _lattice_hdr(dataset, _bbox(bbox)),
+                                 "Access-Control-Expose-Headers":
+                                     "X-Vmin, X-Vmax, X-Date, X-Bounds, X-Lattice",
+                                 # no-cache, not no-store: the browser keeps
+                                 # the body and revalidates, and the server
+                                 # answers from its own disk cache, so a hit
+                                 # costs a 304. max-age would be wrong on BOTH
+                                 # paths -- a tiled box renders empty before
+                                 # its tiles arrive and correct afterwards at
+                                 # the same URL, and a whole-grid overlay's URL
+                                 # does not change when the server-side
+                                 # resampling does (see LATTICE_V), so a stale
+                                 # body would outlive the fix for an hour.
+                                 "Cache-Control": "no-cache"})
 
 
 @app.get("/api/colorbar")
-def api_colorbar(var: str = "sst", dataset: str = "oisst_local"):
+def api_colorbar(var: str = "sst", dataset: str = "oisst_remote"):
     try:
         png = D.render_colorbar(dataset, var)
     except (ValueError, KeyError) as e:
@@ -112,14 +163,14 @@ def api_colorbar(var: str = "sst", dataset: str = "oisst_local"):
 
 
 @app.get("/api/point")
-def api_point(lat: float, lon: float, date: str, dataset: str = "oisst_local"):
+def api_point(lat: float, lon: float, date: str, dataset: str = "oisst_remote"):
     ds = _ds(dataset)
     return _remote_guard(ds.point_values, lat, lon, date)
 
 
 @app.get("/api/series")
 def api_series(lat: float, lon: float, var: str = "sst",
-               dataset: str = "oisst_local",
+               dataset: str = "oisst_remote",
                start: str | None = None, end: str | None = None):
     ds = _ds(dataset)
     if var not in ds.variables and var != ds.ice_var:
@@ -150,7 +201,7 @@ def api_batch_job(payload: dict = Body(...)):
     """Start a background job: fetch each point's series for its own exact
     date list, assemble one combined CSV, and optionally render a PDF per
     point. Poll progress via /api/batch_job_status."""
-    dsid = payload.get("dataset", "oisst_local")
+    dsid = payload.get("dataset", "oisst_remote")
     _ds(dsid)
     points = payload.get("points") or []
     if not points:
@@ -160,7 +211,8 @@ def api_batch_job(payload: dict = Body(...)):
             raise HTTPException(400, f"point {p.get('label')!r} has no dates")
     job_id = R.start_batch_job(dsid, points,
                                bool(payload.get("generate_pdf", False)),
-                               bool(payload.get("refresh_data", False)))
+                               bool(payload.get("refresh_data", False)),
+                               bool(payload.get("generate_compare", False)))
     return {"id": job_id}
 
 
@@ -172,10 +224,45 @@ def api_batch_job_status(id: str):
     return job
 
 
+@app.post("/api/tile_job")
+def api_tile_job(payload: dict = Body(...)):
+    """Start a background download of every MUR tile the given box needs but
+    does not have cached yet. Poll progress via /api/tile_job_status.
+    total == 0 means everything is already on disk -- nothing to wait for."""
+    dsid = payload.get("dataset", "mur_okhotsk")
+    if dsid not in D.DATASETS:
+        raise HTTPException(400, f"unknown dataset {dsid!r}")
+    ds = D.DATASETS[dsid]
+    if not hasattr(ds, "mosaic_idx"):
+        raise HTTPException(400, f"{dsid} is not tiled; no tiles to fetch")
+    try:
+        w, s, e, n = (float(x) for x in payload["bbox"])
+    except (KeyError, TypeError, ValueError):
+        raise HTTPException(400, "bbox must be [west, south, east, north]")
+    date = payload.get("date")
+    if not date:
+        raise HTTPException(400, "date is required")
+    varz = payload.get("vars") or None
+    job = _remote_guard(D.start_tile_job, dsid, date, (w, s, e, n), varz)
+    # start_tile_job may hand back just the id or (id, total)
+    jid, total = job if isinstance(job, tuple) else (
+        job, D.TILE_JOBS.get(job, {}).get("total", 0))
+    return {"id": jid, "total": total}
+
+
+@app.get("/api/tile_job_status")
+def api_tile_job_status(id: str):
+    job = D.TILE_JOBS.get(id)
+    if job is None:
+        raise HTTPException(404, "unknown job")
+    return {"state": job.get("state", "running"), "done": job.get("done", 0),
+            "total": job.get("total", 0), "error": job.get("error")}
+
+
 @app.get("/api/playback_dates")
 def api_playback_dates(start: str, end: str, gap: int = 1,
                        same_day_each_year: bool = False,
-                       dataset: str = "oisst_local"):
+                       dataset: str = "oisst_remote"):
     _ds(dataset)
     return _remote_guard(D.playback_dates, dataset, start, end, gap, same_day_each_year)
 
@@ -198,7 +285,7 @@ def _gif_params(dataset, start, end, gap, same_day_each_year, bbox, dates=None):
 
 @app.get("/api/export/timelapse")
 def api_export_timelapse(start: str, end: str, var: str = "sst",
-                         dataset: str = "oisst_local",
+                         dataset: str = "oisst_remote",
                          gap: int = 1, same_day_each_year: bool = False,
                          vmin: float = -2, vmax: float = 25, fps: float = 4,
                          dates: str | None = Query(None, description="explicit ISO frame list"),
@@ -254,7 +341,7 @@ def api_area_create(payload: dict = Body(...)):
         raise HTTPException(400, "bad geometry")
     area = {
         "id": uuid.uuid4().hex[:8], "name": name, "geom": geom,
-        "dataset": payload.get("dataset", "oisst_local"),
+        "dataset": payload.get("dataset", "oisst_remote"),
         "var": payload.get("var", "sst"),
         "date": payload.get("date"),
         "vmin": payload.get("vmin"), "vmax": payload.get("vmax"),
@@ -338,7 +425,7 @@ def api_area_media_delete(area_id: str, name: str):
 
 @app.post("/api/areas/{area_id}/snapshot")
 def api_area_snapshot(area_id: str, date: str, var: str = "sst",
-                      dataset: str = "oisst_local",
+                      dataset: str = "oisst_remote",
                       vmin: float = -2, vmax: float = 25):
     with _AREAS_LOCK:
         a = _find_area(_load_areas(), area_id)
@@ -353,7 +440,7 @@ def api_area_snapshot(area_id: str, date: str, var: str = "sst",
 
 @app.post("/api/areas/{area_id}/gif")
 def api_area_gif(area_id: str, start: str, end: str, var: str = "sst",
-                 dataset: str = "oisst_local", gap: int = 1,
+                 dataset: str = "oisst_remote", gap: int = 1,
                  same_day_each_year: bool = False,
                  vmin: float = -2, vmax: float = 25, fps: float = 4,
                  dates: str | None = Query(None, description="explicit ISO frame list")):
@@ -372,7 +459,7 @@ def api_area_gif(area_id: str, start: str, end: str, var: str = "sst",
 
 @app.get("/api/areas/{area_id}/mean_series")
 def api_area_mean_series(area_id: str, var: str = "sst",
-                         dataset: str = "oisst_local",
+                         dataset: str = "oisst_remote",
                          start: str | None = None, end: str | None = None):
     with _AREAS_LOCK:
         a = _find_area(_load_areas(), area_id)

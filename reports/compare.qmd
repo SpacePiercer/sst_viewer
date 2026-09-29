@@ -1,0 +1,179 @@
+---
+title: "`r params$title`"
+subtitle: "`r params$subtitle`"
+author: "Georgii Kuzhel"
+format:
+  pdf:
+    toc: true
+    toc-title: "Contents"
+    toc-depth: 2
+    colorlinks: true
+    # indent subsections clearly under their section in the contents
+    include-in-header:
+      text: |
+        \DeclareTOCStyleEntry[indent=3em]{tocline}{subsection}
+number-sections: true
+params:
+  title: "SST Comparison"
+  subtitle: ""
+  source: ""
+  map: ""
+  points: ""
+  strip: ""
+  strip_w: 0
+  strip_h: 0
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
+```
+
+```{r load}
+library(ggplot2)
+library(dplyr)
+library(patchwork)
+
+data <- read.csv(params$source)
+data$date <- as.Date(data$date)
+data$year <- as.integer(format(data$date, "%Y"))
+data$md   <- format(data$date, "%m-%d")
+
+# numbered north to south, matching the dots on every map
+pp <- read.csv(params$points) %>% arrange(n)
+pp$key <- paste0(pp$n, "  ", pp$label)
+data$key <- factor(paste0(data$n, "  ", data$label), levels = pp$key)
+colours <- setNames(pp$colour, pp$n)
+
+yrs     <- sort(unique(data$year))
+n_years <- length(yrs)
+n_md    <- length(unique(data$md))
+caption <- "Based on SST data fetched live via sst_viewer"
+
+# the map strip arrives as raw RGB bytes: base R has no PNG reader
+sw <- as.integer(params$strip_w); sh <- as.integer(params$strip_h)
+b  <- matrix(as.integer(readBin(params$strip, "raw", sw * sh * 3)), nrow = 3)
+strip <- as.raster(matrix(rgb(b[1, ], b[2, ], b[3, ], maxColorValue = 255),
+                          nrow = sh, byrow = TRUE))
+
+map_panel <- ggplot() +
+  annotation_raster(strip, 0, sw, -sh, 0) +
+  scale_x_continuous(limits = c(0, sw), expand = c(0, 0)) +
+  scale_y_continuous(limits = c(-sh, 0), expand = c(0, 0)) +
+  coord_fixed() + theme_void()
+```
+
+\newpage
+
+# Where the points are
+
+Numbers run north to south and are used, in the same colours, in every chart
+below.
+
+![](`r params$map`){height=5in fig-align="center"}
+
+# Mean SST per point and year
+
+```{r table, fig.height = 0.45 * nrow(pp) + 1.4, fig.width = 7}
+means <- data %>% group_by(key, year) %>% summarise(sst = mean(value, na.rm = TRUE), .groups = "drop")
+ggplot(means, aes(factor(year), key, fill = sst)) +
+  geom_tile(colour = "white", linewidth = 0.8) +
+  geom_text(aes(label = sprintf("%.1f", sst)), size = 3.6) +
+  scale_fill_distiller(palette = "RdYlBu", direction = -1, name = "°C") +
+  scale_y_discrete(limits = rev(levels(data$key))) +
+  labs(x = NULL, y = NULL,
+       caption = if (n_md > 1) paste0("Mean over the ", n_md, " calendar days requested in each year. ", caption) else caption) +
+  theme_minimal(base_size = 11) +
+  theme(panel.grid = element_blank(), axis.text.y = element_text(hjust = 0))
+```
+
+```{r years-intro, results = "asis"}
+if (n_md > 1) {
+  cat("# Year by year\n\n",
+      "For each year: the daily SST of every point, labelled by number at the",
+      "end of its line; then each point's difference from its own mean over",
+      "the window, one row per point, north at the top.\n")
+} else {
+  cat("# SST across years\n\n",
+      "One calendar day per year, so each line is that day in each year.\n")
+}
+```
+
+```{r single-day, eval = n_md == 1, fig.width = 7, fig.height = 4}
+ggplot(data, aes(year, value, colour = factor(n))) +
+  geom_line(linewidth = 0.7) + geom_point(size = 2) +
+  scale_x_continuous(breaks = yrs) +
+  scale_colour_manual(values = colours, labels = pp$key, name = NULL) +
+  labs(x = NULL, y = "SST (°C)", caption = caption) +
+  theme_bw(base_size = 10) + theme(legend.position = "bottom") +
+  guides(colour = guide_legend(ncol = 2))
+```
+
+```{r per-year, eval = n_md > 1, results = "asis", fig.width = 7, fig.height = 3.7}
+line_fig <- function(d, yr) {
+  # numbers at the line ends replace a legend; push them apart so close
+  # lines don't print on top of each other
+  ends <- d %>% group_by(n) %>% filter(day == max(day)) %>% ungroup() %>% arrange(value)
+  gap <- max(diff(range(d$value, na.rm = TRUE)), 1) * 0.06
+  ends$ly <- ends$value
+  for (i in seq_len(nrow(ends))[-1]) ends$ly[i] <- max(ends$ly[i], ends$ly[i - 1] + gap)
+  chart <- ggplot(d, aes(day, value, colour = factor(n))) +
+    geom_line(linewidth = 0.8) +
+    geom_text(data = ends, aes(x = day, y = ly, label = n), nudge_x = 0.5,
+              hjust = 0, size = 3.6, fontface = "bold") +
+    scale_colour_manual(values = colours, guide = "none") +
+    scale_x_date(date_labels = "%d %b", expand = expansion(mult = c(0.02, 0.07))) +
+    labs(x = NULL, y = "SST (°C)") +
+    theme_minimal(base_size = 10) + theme(panel.grid.minor = element_blank())
+  map_panel + chart + plot_layout(widths = c(1, 2.6)) +
+    plot_annotation(title = paste0(yr, " · daily SST, all points"))
+}
+
+heat_fig <- function(d, yr) {
+  days <- sort(unique(d$day)); nd <- length(days)
+  d <- d %>% group_by(n) %>% mutate(anom = value - mean(value, na.rm = TRUE)) %>% ungroup()
+  # a row sits level with its dot; if dots are too close for that, rows are
+  # spaced evenly instead and the leader lines slant to reach them
+  rowh <- min(34, sh / (nrow(pp) * 1.3))
+  ry <- pp$py
+  if (nrow(pp) > 1 && min(diff(sort(ry))) < rowh * 1.15) {
+    step <- rowh * 1.15
+    ry <- mean(range(pp$py)) - step * (nrow(pp) - 1) / 2 + step * (rank(pp$py) - 1)
+  }
+  rows <- pp %>% mutate(ry = ry)
+  lab_x <- sw + 45; x0 <- sw + 70; tw <- max(2.6 * sw, 520) / nd
+  d$x <- x0 + (match(d$day, days) - 0.5) * tw
+  d$y <- -rows$ry[match(d$n, rows$n)]
+  lim <- max(abs(d$anom), 0.5, na.rm = TRUE)
+  brk <- unique(round(seq(1, nd, length.out = min(4, nd))))
+  ggplot() +
+    annotation_raster(strip, 0, sw, -sh, 0) +
+    geom_segment(data = rows, aes(x = px + 10, y = -py, xend = lab_x - 12, yend = -ry),
+                 linetype = "dashed", colour = "grey45", linewidth = 0.3) +
+    geom_text(data = rows, aes(x = lab_x, y = -ry, label = n, colour = colour),
+              fontface = "bold", size = 3.8) +
+    scale_colour_identity() +
+    geom_tile(data = d, aes(x, y, fill = anom), width = tw * 0.92, height = rowh) +
+    scale_fill_gradient2(low = "#2c5fbf", mid = "grey95", high = "#c8382c",
+                         midpoint = 0, limits = c(-lim, lim),
+                         name = "°C vs that point's mean over the window") +
+    annotate("text", x = sw / 2, y = 16, label = "North", size = 3.3) +
+    annotate("text", x = sw / 2, y = -sh - 16, label = "South", size = 3.3) +
+    scale_x_continuous(breaks = x0 + (brk - 0.5) * tw, labels = format(days[brk], "%d %b")) +
+    expand_limits(y = c(-sh - 30, 30)) +
+    coord_fixed(clip = "off") +
+    labs(title = paste0(yr, " · warmer or colder than usual for that point")) +
+    theme_void(base_size = 10) +
+    theme(axis.text.x = element_text(size = 8, margin = margin(t = 3)),
+          legend.position = "bottom", legend.key.width = unit(1.4, "cm"),
+          plot.title = element_text(face = "bold", margin = margin(b = 6)))
+}
+
+for (yr in yrs) {
+  d <- data %>% filter(year == yr) %>% mutate(day = as.Date(paste0("2000-", md)))
+  cat("\n\n## ", yr, "\n\n", sep = "")
+  print(line_fig(d, yr))
+  cat("\n\n")
+  if (length(unique(d$day)) >= 3) print(heat_fig(d, yr))
+  cat("\n\n\\newpage\n\n")
+}
+```

@@ -5,3 +5,7 @@ areas.json
 data/oisst_may20_july1/
 
 .claude/settings.local.json
+
+# agent / planning docs (kept locally, never published)
+.claude/
+PROMPT*.md

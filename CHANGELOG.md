@@ -1,5 +1,52 @@
 # Changelog
 
+## 2026-09-29 — Overlay squares sat off the grid lines
+
+**Overlay PNGs are now at most 4096 px a side** (`datasets.py`
+`_merc_plan`, `MAX_OVERLAY_SIDE`; lattice version `m3` -> `m4`, so old PNGs
+are no longer served). Chrome resamples any image taller than 4096 px before
+drawing it: a 5° MUR tile at 52N was 500x6579 and whole-grid OISST
+1440x11520, so their row edges landed on multiples of height/4096 instead of
+where the grid overlay (correctly) draws them -- blocks up to ~6 screen px
+off at z13, in both directions. The plan now drops row oversampling (8 -> 4
+for one MUR tile, 8 -> 2 for OISST) and, only if still too tall, merges
+cells, until both sides fit; the grid's lattice snapping follows it via
+`X-Lattice`. The full 135-165E 40-65N study region now renders at 2 cells
+per pixel (it is sub-pixel on screen at that extent anyway). Check:
+`test_tiles.py` asserts no overlay side exceeds 4096.
+
+## 2026-09-27 — Comparison PDF for multi-point batches; overlay PNG button gone
+
+**One comparison PDF per batch** (`reports.py`, `reports/compare.qmd`,
+`app.js?v=52`). Per-point PDFs made several capes hard to read side by side.
+A new "Also generate one comparison PDF" checkbox (greyed out until 2+ rows
+are checked) renders, after the per-point work, one document: a satellite
+locator map (Esri World Imagery tiles stitched with PIL, numbered
+colour-coded dots, north first), a colour-shaded point × year mean table,
+then per year a map strip beside the daily line chart with lines labelled at
+their ends, and a north-at-top heatmap of each point's difference from its
+own window mean with leader lines from the dots. The strip reaches R as raw
+RGB bytes (base R has no PNG reader, and nothing new was installed). A
+single-calendar-day batch gets one year-on-x chart instead of empty panels.
+
+**Comparison map: legend instead of on-map names** (`reports.py`
+`locator_map`, `_spread`). Names drawn beside the dots collided as soon as two
+points were closer than a label is long (a 2 km / 3 km pair off the same cape
+is ~1 km apart). Names now sit in a "Points, north to south" legend panel to
+the right of the map; markers that would overlap are pushed apart just enough
+to read, with a leader line and a small dot at each true position. The same
+spreading applies to the per-year map strip. Check in `test_smoke.py`.
+
+**Table of contents in both templates** — clickable, subsections indented
+3em under their section (`\DeclareTOCStyleEntry` in the header).
+
+Quarto's streaming/timeout code moved out of `render_pdf` into
+`_quarto_render` so both reports share it. `batch_download.py` takes
+`"compare"` (defaults to on with PDFs, 2+ points) and prints a `CMP` line.
+
+**"Download overlay PNG" removed** (`static/index.html`, `static/app.js`) —
+not used; its handler and EN/RU strings went with it.
+
 ## 2026-09-10 — Control island, preloaded timelapse with a scrubber
 
 **The status bar became the control island** (`static/index.html`,

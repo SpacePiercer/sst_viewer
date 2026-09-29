@@ -5,7 +5,7 @@
 <title>SST Viewer — Okhotsk Sea</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="style.css?v=49">
 </head>
 <body>
 
@@ -22,8 +22,13 @@
 
 <div id="map"></div>
 
+<div id="murProgress" hidden role="status" aria-live="polite">
+  <div class="murBarWrap"><div id="murProgressBar"></div></div>
+  <span id="murProgressText"></span>
+</div>
+
 <div id="statusBar">
-  <select id="datasetSelect" data-i18n-title="lbl_dataset"></select>
+  <span id="datasetName" data-i18n-title="lbl_dataset"></span>
   <select id="varSelect" data-i18n-title="lbl_variable"></select>
   <button id="prevBtn" title="←">◀</button>
   <input type="hidden" id="dateInput">
@@ -49,6 +54,10 @@
       <div class="secHead"><b data-i18n="sec_layer">Layer</b><span class="help" data-i18n-title="help_layer">?</span></div>
       <span class="muted" data-i18n="txt_island">Dataset, variable and date are set in the bar above the map.</span>
       <label><span data-i18n="lbl_opacity">Overlay opacity</span> <input type="range" id="opacity" min="0" max="100" value="85"></label>
+      <label><span data-i18n="lbl_basemap">Satellite opacity</span> <input type="range" id="basemapOpacity" min="0" max="100" value="100"></label>
+      <label><span data-i18n="lbl_edgeblur">Edge blur</span> <input type="range" id="edgeBlur" min="0" max="10" value="0"></label>
+      <label class="check"><input type="checkbox" id="gridToggle"> <span data-i18n="lbl_grid">Grid</span></label>
+      <label class="check"><input type="checkbox" id="autoMur"> <span data-i18n="lbl_auto_mur">Auto 1 km on zoom</span></label>
     </section>
 
     <section>
@@ -69,15 +78,15 @@
         <button id="measureBtn" data-i18n="btn_measure">📏 Measure distance</button>
         <button id="clearMeasureBtn" title="clear">✕</button>
       </div>
-      <div class="row">
-        <button id="downloadOverlayBtn" data-i18n="btn_overlaypng" data-i18n-title="help_overlaypng">Download overlay PNG</button>
-      </div>
     </section>
   </div>
 
   <div class="tabPane hidden" id="tab-tl">
     <section>
       <div class="secHead"><b data-i18n="sec_timelapse">Timelapse</b><span class="help" data-i18n-title="help_timelapse">?</span></div>
+      <label><span data-i18n="lbl_tl_dataset">dataset</span>
+        <select id="tlDataset"></select>
+      </label>
       <div id="tlRangeRows">
         <div class="row">
           <span data-i18n="lbl_from">from</span> <input type="hidden" id="tlStart">
@@ -156,6 +165,7 @@
       </div>
       <div id="coordRows"></div>
       <label class="check"><input type="checkbox" id="alsoPdf"> <span data-i18n="lbl_also_pdf">Also generate PDF(s)</span></label>
+      <label class="check" id="alsoCompareLbl"><input type="checkbox" id="alsoCompare" disabled> <span data-i18n="lbl_also_compare">Also generate one comparison PDF</span></label>
       <label class="check"><input type="checkbox" id="refreshData"> <span data-i18n="lbl_refresh_data">Re-download data (ignore cache)</span></label>
       <div class="row">
         <button id="downloadBtn" data-i18n="btn_download">⬇ Download</button>
@@ -213,6 +223,6 @@
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.9/dist/chart.umd.min.js"></script>
-<script src="app.js?v=30"></script>
+<script src="app.js?v=52"></script>
 </body>
 </html>

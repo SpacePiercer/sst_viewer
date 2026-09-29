@@ -82,14 +82,17 @@ def main():
         print(f"  {p['name']:<32} {len(dates):>3} date(s)  "
               f"{dates[0]} .. {dates[-1]}")
     total = sum(len(p["dates"]) for p in points)
+    # one comparison PDF over all points: on by default with PDFs, 2+ points
+    want_cmp = spec.get("compare", want_pdf) and len(points) >= 2
     print(f"\n  {len(points)} point(s), {total} dates, dataset={dataset}, "
-          f"pdf={want_pdf}")
+          f"pdf={want_pdf}, compare={want_cmp}")
     if a.dry_run:
         return
 
     try:
         job = api("/api/batch_job", {"dataset": dataset, "points": points,
                                      "generate_pdf": want_pdf,
+                                     "generate_compare": want_cmp,
                                      "refresh_data": spec.get("refresh", False)})
     except urllib.error.URLError as e:
         sys.exit(f"cannot reach the app at {BASE} ({e}); start it with "
@@ -120,6 +123,8 @@ def main():
             failed += 1
             print(f"  FAIL {p['label']:<32} {p.get('error')}")
     print(f"  CSV  {st.get('csv_url')}")
+    if want_cmp:
+        print(f"  CMP  {st.get('compare_url') or 'FAILED: ' + str(st.get('compare_error'))}")
     if failed:
         sys.exit(f"{failed} point(s) failed")
 

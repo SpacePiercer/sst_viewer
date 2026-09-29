@@ -2,7 +2,16 @@
 title: "`r params$title`"
 subtitle: "`r params$subtitle`"
 author: "Georgii Kuzhel"
-format: pdf
+format:
+  pdf:
+    toc: true
+    toc-title: "Contents"
+    toc-depth: 2
+    colorlinks: true
+    # indent subsections clearly under their section in the contents
+    include-in-header:
+      text: |
+        \DeclareTOCStyleEntry[indent=3em]{tocline}{subsection}
 number-sections: true
 params:
   title: "SST Analysis"

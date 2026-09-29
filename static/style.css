@@ -181,7 +181,59 @@ progress.stageRender { accent-color: #2e9e44; }
   #splash, .splashBar, .splashTip span { transition: none; }
 }
 
+/* ---- MUR tile download progress, floating over the map ----
+   Same bar language as the splash, dark island so it reads on satellite. */
+#murProgress {
+  position: absolute; top: 56px; left: 50%; transform: translateX(-50%);
+  z-index: 1001; display: flex; align-items: center; gap: 8px;
+  background: rgba(11,16,33,.85); color: #fff; border-radius: 14px;
+  padding: 6px 12px; box-shadow: 0 1px 6px rgba(0,0,0,.45);
+  font-size: 12px; white-space: nowrap;
+}
+#murProgress[hidden] { display: none; }
+#murProgress .murBarWrap {
+  width: 160px; height: 4px; border-radius: 4px; overflow: hidden;
+  background: rgba(255,255,255,.22);
+}
+#murProgressBar {
+  height: 100%; width: 0; border-radius: 4px;
+  background: linear-gradient(90deg, #3b528b, #21918c, #5ec962, #fde725);
+  transition: width .25s ease;
+}
+@media (prefers-reduced-motion: reduce) { #murProgressBar { transition: none; } }
+
 /* GIF crop box: four degree fields in a 2x2 grid */
 .boxGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 3px 6px; margin: 4px 0; }
 .boxGrid label { display: flex; align-items: center; gap: 4px; font-size: 11px; }
 .boxGrid input { width: 100%; min-width: 0; }
+
+/* The dataset is chosen by the zoom, not by the user, so it reads as a label
+   rather than a control -- but it keeps the picker's metrics so the status bar
+   does not reflow when the name changes length. */
+#datasetName { font-weight: 600; padding: 0 6px; white-space: nowrap;
+               min-width: 170px; display: inline-block; }
+#datasetName.busy { opacity: .5; }
+
+/* Leaflet ships `.leaflet-container{background:#ddd}`. The map view spans the
+   antimeridian now, and the tile layer's wrap point there leaves a hairline
+   where that near-white grey shows through as a vertical line down the middle
+   of the Pacific -- most visible before the SST overlay paints over it. Deep
+   ocean instead of near-white makes the seam invisible against the imagery,
+   and kills the grey flash while tiles load. */
+.leaflet-container { background: #0b1d2e; }
+
+/* Source tree: the server on one line, its datasets indented beneath it with
+   file-manager elbows, so "the host is down" reads differently at a glance
+   from "one dataset is down". */
+#srcHealth { flex-direction: column; align-items: flex-start; gap: 1px; }
+#srcHealth .src.child { padding-left: 2px; }
+#srcHealth .twig { font-style: normal; white-space: pre; opacity: .45;
+                   font-family: ui-monospace, Consolas, monospace; letter-spacing: -.5px; }
+/* A dataset that is only red because its host is red is greyed: the failure
+   is the server's, and colouring it red twice would blame the wrong thing. */
+#srcHealth .src.inherited { color: #999; font-weight: 400; }
+#srcHealth .src.inherited .dot { background: #bbb; }
+#srcHealth .statusWarn { color: #b8860b; }
+
+/* a greyed-out option that does not apply yet (e.g. comparison with < 2 points) */
+label.check:has(input:disabled) { opacity: .45; cursor: not-allowed; }

@@ -30,9 +30,10 @@ if ($old) {
     Write-Output "stopped the previous sst_viewer instance"
 }
 
-New-Item -ItemType Directory -Force -Path (Join-Path $viewerDir "cache") | Out-Null
-$log = Join-Path $viewerDir "cache\uvicorn.log"
-$errLog = Join-Path $viewerDir "cache\uvicorn.err.log"
+$cacheDir = if ($env:SST_CACHE) { $env:SST_CACHE } else { Join-Path $HOME "sst_cache" }
+New-Item -ItemType Directory -Force -Path $cacheDir | Out-Null
+$log = Join-Path $cacheDir "uvicorn.log"
+$errLog = Join-Path $cacheDir "uvicorn.err.log"
 Start-Process -FilePath $py -ArgumentList "-m", "uvicorn", "app:app", "--port", "$port" `
     -WorkingDirectory $viewerDir -WindowStyle Hidden `
     -RedirectStandardOutput $log -RedirectStandardError $errLog

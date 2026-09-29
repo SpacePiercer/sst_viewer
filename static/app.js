@@ -71,8 +71,13 @@ function wireDMY(id) {
 // ------------------------------------------------------------------- i18n
 const I18N = {
   en: {
-    sec_layer: "Layer", help_layer: "Which dataset and field are drawn on the map. OISST local = the project's offline files (May 20 – Jul 1, 2000–2025); OISST ERDDAP = the same 0.25° dataset from NOAA servers back to Sept 1981, all days; MUR = 1 km satellite SST (the map view covers the Okhotsk box; point charts and CSV export work for any coordinates on the globe). Remote dates download on demand the first time you view them.",
+    sec_layer: "Layer", help_layer: "Which dataset and field are drawn on the map. OISST = the 0.25° NOAA dataset from ERDDAP, back to Sept 1981, all days; MUR = 1 km satellite SST over the Pacific box, downloaded as 5° tiles for whatever you have zoomed into. Zooming in past the MUR threshold switches to it automatically and zooming back out returns to OISST. Everything downloads on demand the first time you view it.",
     lbl_dataset: "Dataset", lbl_variable: "Variable", lbl_opacity: "Overlay opacity",
+    lbl_basemap: "Satellite opacity", lbl_edgeblur: "Edge blur", lbl_grid: "Grid",
+    lbl_auto_mur: "Auto 1 km on zoom",
+    lbl_tl_dataset: "dataset (for playback and GIF)",
+    mur_tiles: (d, n) => `${d} / ${n} tiles`,
+    mur_failed: "1 km tiles unavailable, staying on 0.25°",
     var_sst: "SST (°C)", var_anom: "SST anomaly (°C)", var_err: "Analysis error (°C)",
     var_analysed_sst: "SST (°C)", var_sea_ice_fraction: "Sea-ice fraction",
     sec_scale: "Color scale", help_scale: "Auto picks the 2–98 percentile range of the current frame. Fixed uses the min/max you type — required for comparing dates or running a timelapse, otherwise colors mean different temperatures in every frame.",
@@ -83,7 +88,8 @@ const I18N = {
     lbl_from: "from", lbl_gap: "step, days", help_gap: "How many calendar days to jump each frame (snapping to the nearest available date). 1 = every day. 365 ≈ the same day next year (use the checkbox below for a leap-safe version).",
     lbl_fps: "fps", lbl_sameday: "same day each year", help_sameday: "Show the same month/day (taken from the 'from' date) in every year of the range — e.g. every June 1 from 2000 to 2025.",
     txt_island: "Dataset, variable and date are set in the bar above the map.",
-    tl_loading: "loading frames", tl_spec_bad: "fill in the day/month and year fields",
+    tl_loading: "loading frames", tl_tiles: "downloading 1 km tiles, frame",
+    tl_spec_bad: "fill in the day/month and year fields",
     sec_gifbox: "GIF area", help_gifbox: "The rectangle the exported GIF is cropped to, in degrees. Seeded from the current map view; edit the numbers, or pick a saved area to reuse exactly the same frame again. Save the box as an area to keep it for later.",
     opt_box_custom: "— custom box —", btn_box_from_map: "⤢ from map", btn_box_to_map: "zoom to box",
     btn_box_save: "💾 Save as new", ph_box_name: "name", box_need_name: "type a name for the area first",
@@ -106,6 +112,8 @@ const I18N = {
     boot_ready: "Ready",
     tip_scale: "Comparing two dates? Switch the color scale to Fixed. Auto rescales every frame, so the same color means a different temperature each time.",
     tip_health: "The dots under the title show whether each source is reachable right now — hover one for latency and the last error.",
+    hl_cause: "ERDDAP status", hl_status_stale: "status page unreachable",
+    hl_inherited: "not checked separately — the server it lives on is down",
     tip_global: "Point charts and CSV export work for any coordinates on the globe. The map box only limits the drawn overlay.",
     tip_sameday: "For a year-on-year animation use “same day each year” instead of a 365-day step — it stays aligned across leap years.",
     tip_data: "In the Data tab one row can repeat the same calendar days across many years — five days across 24 years is a single set.",
@@ -115,7 +123,6 @@ const I18N = {
     txt_ab: "A = left, B = right. Scale is frozen while comparing.",
     sec_tools: "Tools", help_tools: "Distance measurement and extras.",
     btn_measure: "📏 Measure distance",
-    btn_overlaypng: "Download overlay PNG", help_overlaypng: "Saves the raw SST overlay image for the current date (no basemap).",
     lbl_ice: "ice (≥15%)", lbl_nodata: "no data",
     sec_areas: "Saved areas", help_areas: "Draw a point, rectangle, circle or polygon on the map and save it with the current dataset/variable/date/scale. From the list you can jump back to it, make cropped snapshots or GIFs, and chart the spatial mean.",
     btn_draw_point: "• Point", btn_draw_rect: "▭ Rectangle", btn_draw_circle: "◯ Circle", btn_draw_poly: "⬠ Polygon",
@@ -148,6 +155,9 @@ const I18N = {
     btn_copy_dates: "copy these dates to checked rows ↓",
     row_no_dates: "no dates added yet", row_bad_dates: "incomplete date/year fields",
     row_n_dates: (n, a, b) => `${n} date(s): ${a} … ${b}`,
+    lbl_also_compare: "Also generate one comparison PDF",
+    compare_needs2: "Check at least 2 points to compare them",
+    compare_ready: "⬇ comparison PDF (all points)", compare_label: "Comparison report",
     lbl_also_pdf: "Also generate PDF(s)", btn_download: "⬇ Download",
     rows_bad_dates: "These coordinates have no complete dates yet:",
     pdf_ready: "⬇ PDF report", csv_ready: "⬇ combined CSV",
@@ -158,8 +168,13 @@ const I18N = {
     lbl_refresh_data: "Re-download data (ignore cache)", cached_note: "cached data, no download",
   },
   ru: {
-    sec_layer: "Слой", help_layer: "Какой набор данных и поле рисуются на карте. OISST локально — офлайн-файлы проекта (20 мая – 1 июля, 2000–2025); OISST ERDDAP — тот же набор 0.25° с серверов NOAA с сентября 1981, все дни; MUR — спутниковая ТПМ 1 км (карта покрывает Охотский бокс; графики точек и экспорт CSV работают для любых координат на глобусе). Удалённые даты скачиваются по запросу при первом просмотре.",
+    sec_layer: "Слой", help_layer: "Какой набор данных и поле рисуются на карте. OISST — набор 0.25° NOAA с ERDDAP, с сентября 1981, все дни; MUR — спутниковая ТПМ 1 км по тихоокеанскому боксу, скачивается тайлами по 5° для того, куда вы приблизились. Приближение переключает на MUR автоматически, отдаление возвращает OISST. Всё скачивается по запросу при первом просмотре.",
     lbl_dataset: "Набор данных", lbl_variable: "Переменная", lbl_opacity: "Прозрачность слоя",
+    lbl_basemap: "Прозрачность снимка", lbl_edgeblur: "Размытие границ", lbl_grid: "Сетка",
+    lbl_auto_mur: "Авто 1 км при зуме",
+    lbl_tl_dataset: "набор данных (для проигрывания и GIF)",
+    mur_tiles: (d, n) => `${d} / ${n} тайлов`,
+    mur_failed: "тайлы 1 км недоступны, остаёмся на 0.25°",
     var_sst: "ТПМ (°C)", var_anom: "Аномалия ТПМ (°C)", var_err: "Ошибка анализа (°C)",
     var_analysed_sst: "ТПМ (°C)", var_sea_ice_fraction: "Доля морского льда",
     sec_scale: "Цветовая шкала", help_scale: "«Авто» берёт диапазон 2–98 перцентилей текущего кадра. «Фикс.» использует введённые min/max — обязательно при сравнении дат и таймлапсе, иначе цвета в каждом кадре означают разные температуры.",
@@ -170,7 +185,8 @@ const I18N = {
     lbl_from: "с", lbl_gap: "шаг, дней", help_gap: "На сколько календарных дней прыгать каждый кадр (с привязкой к ближайшей доступной дате). 1 = каждый день. 365 ≈ тот же день следующего года (для точности лучше галочка ниже).",
     lbl_fps: "кадр/с", lbl_sameday: "тот же день каждый год", help_sameday: "Показывать одно и то же число (месяц/день берутся из даты «с») в каждом году диапазона — например, каждое 1 июня с 2000 по 2025.",
     txt_island: "Набор данных, переменная и дата задаются в полосе над картой.",
-    tl_loading: "загрузка кадров", tl_spec_bad: "заполните поля дня/месяца и года",
+    tl_loading: "загрузка кадров", tl_tiles: "загрузка тайлов 1 км, кадр",
+    tl_spec_bad: "заполните поля дня/месяца и года",
     sec_gifbox: "Область GIF", help_gifbox: "Прямоугольник, по которому обрезается экспортируемый GIF, в градусах. Заполняется по текущему виду карты; измените числа или выберите сохранённую область, чтобы повторить тот же кадр. Кнопка сохранения кладёт рамку в список областей.",
     opt_box_custom: "— своя рамка —", btn_box_from_map: "⤢ с карты", btn_box_to_map: "показать рамку",
     btn_box_save: "💾 Сохранить новую", ph_box_name: "название", box_need_name: "сначала введите название области",
@@ -193,6 +209,8 @@ const I18N = {
     boot_ready: "Готово",
     tip_scale: "Сравниваете две даты? Переключите шкалу на «Фиксированная». «Авто» пересчитывает диапазон в каждом кадре, поэтому один и тот же цвет означает разную температуру.",
     tip_health: "Точки под заголовком показывают, доступен ли сейчас каждый источник — наведите курсор, чтобы увидеть задержку и последнюю ошибку.",
+    hl_cause: "состояние ERDDAP", hl_status_stale: "страница состояния недоступна",
+    hl_inherited: "отдельно не проверялся — недоступен сервер, на котором он размещён",
     tip_global: "Графики по точке и экспорт CSV работают для любых координат на планете. Рамка карты ограничивает только отрисовку слоя.",
     tip_sameday: "Для анимации по годам используйте «тот же день каждый год» вместо шага в 365 дней — так дата не съедет из-за високосных лет.",
     tip_data: "На вкладке «Данные» одна строка может повторять одни и те же календарные дни во многих годах — пять дней за 24 года это один набор.",
@@ -202,7 +220,6 @@ const I18N = {
     txt_ab: "A — слева, B — справа. Шкала фиксируется на время сравнения.",
     sec_tools: "Инструменты", help_tools: "Измерение расстояний и прочее.",
     btn_measure: "📏 Измерить расстояние",
-    btn_overlaypng: "Скачать PNG слоя", help_overlaypng: "Сохраняет изображение SST-слоя за текущую дату (без подложки).",
     lbl_ice: "лёд (≥15%)", lbl_nodata: "нет данных",
     sec_areas: "Сохранённые области", help_areas: "Нарисуйте точку, прямоугольник, круг или полигон на карте и сохраните вместе с текущим набором/переменной/датой/шкалой. Из списка можно вернуться к области, сделать обрезанные снимки или GIF и построить график пространственного среднего.",
     btn_draw_point: "• Точка", btn_draw_rect: "▭ Прямоугольник", btn_draw_circle: "◯ Круг", btn_draw_poly: "⬠ Полигон",
@@ -235,6 +252,9 @@ const I18N = {
     btn_copy_dates: "скопировать эти даты в отмеченные строки ↓",
     row_no_dates: "даты ещё не добавлены", row_bad_dates: "не все поля дат/лет заполнены",
     row_n_dates: (n, a, b) => `дат: ${n}: ${a} … ${b}`,
+    lbl_also_compare: "Также создать один сравнительный PDF",
+    compare_needs2: "Отметьте хотя бы 2 точки, чтобы их сравнить",
+    compare_ready: "⬇ сравнительный PDF (все точки)", compare_label: "Сравнительный отчёт",
     lbl_also_pdf: "Также создать PDF-отчёт(ы)", btn_download: "⬇ Скачать",
     rows_bad_dates: "У этих координат ещё нет полных дат:",
     pdf_ready: "⬇ PDF-отчёт", csv_ready: "⬇ общий CSV",
@@ -261,8 +281,11 @@ function applyLang() {
 }
 
 const state = {
-  dataset: "oisst_local", meta: {}, dates: [], var: "sst", date: null, dateB: null,
+  dataset: "oisst_remote", meta: {}, dates: [], var: "sst", date: null, dateB: null,
   vmin: null, vmax: null, playing: null, comparing: false,
+  // viewport box (w,s,e,n) the tiled dataset is currently rendered for;
+  // null = not on a tiled dataset
+  bbox: null,
 };
 const meta = () => state.meta[state.dataset] || { variables: {}, name: "", resolution_label: "" };
 const varLabel = v => I18N[lang]["var_" + v] ? t("var_" + v) : (meta().variables[v] || v);
@@ -279,13 +302,38 @@ async function fetchJSON(url, opts) {
 
 // ------------------------------------------------------------------ map
 const MLAT = 85.05112878; // overlay PNGs are Mercator-resampled to this limit
-const map = L.map("map", { center: [50, 148], zoom: 5, worldCopyJump: true });
+// The whole app lives inside one Pacific box whose longitudes run 95..295 --
+// i.e. it crosses the antimeridian and is NOT expressible in -180..180. That
+// is why worldCopyJump must stay off: it re-wraps the centre into -180..180
+// the moment you pan past 180, which walks the view straight out of maxBounds
+// and then fights the viscosity to get back. Same reason nothing here calls
+// LatLng.wrap().
+const MAX_BOUNDS = [[-20, 95], [70, 295]];
+const MUR_ZOOM = 6;              // at or above this zoom, MUR for the viewport
+const map = L.map("map", {
+  center: [25, 195], zoom: 3, worldCopyJump: false,
+  maxBounds: MAX_BOUNDS, maxBoundsViscosity: 1.0,
+});
+
+// minZoom can only be computed once the container has a real size, so this is
+// called from the boot sequence (and on resize) rather than inline.
+function fitWholeBox() {
+  map.invalidateSize();
+  map.fitBounds(MAX_BOUNDS);
+  map.setMinZoom(map.getZoom());   // the whole box fits here; no zooming past it
+}
+window.addEventListener("resize", () => {
+  // a wider window can fit the box at a zoom the old minZoom forbids
+  const z = map.getBoundsZoom(MAX_BOUNDS);
+  if (z !== map.getMinZoom()) map.setMinZoom(z);
+});
 
 // Esri World Imagery is the only basemap. Carto "Light" now needs a paid API
 // key (serves an "API KEY REQUIRED" tile without one) and Esri's Ocean
 // bathymetry has no real tiles over the NW Pacific past ~z11 -- every cell
 // comes back "Map data not yet available". With one layer there is no picker.
-L.tileLayer(
+// kept in a variable so #basemapOpacity can fade it out from under the SST
+const basemap = L.tileLayer(
   "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
   { attribution: "Esri World Imagery", maxZoom: 17 }).addTo(map);
 L.control.scale({ imperial: false }).addTo(map);
@@ -295,6 +343,9 @@ L.control.scale({ imperial: false }).addTo(map);
 // saved-area outlines both came out washed under an 85%-opaque raster.
 map.createPane("ovA").style.zIndex = 250;
 map.createPane("ovB").style.zIndex = 260;
+// own pane: the cell grid must stay crisp when #edgeBlur blurs ovA/ovB, and
+// must not be clipped away by the A/B swipe divider
+map.createPane("cells").style.zIndex = 270;
 
 // Overlay repeated on the -360/0/+360 world copies so panning never leaves it
 const WORLD_OFFS = [-360, 0, 360];
@@ -315,17 +366,142 @@ function makeWorldOverlay(pane) {
 const overlayA = makeWorldOverlay("ovA").addTo(map);
 const overlayB = makeWorldOverlay("ovB");
 
+// ------------------------------------------------- edge sharpness / blur
+// Set on the two overlay PANES, not on the <img>es: setUrl() replaces the
+// image's src on every frame and any per-image style would have to be
+// re-applied each time. `image-rendering` inherits, so the pane is enough.
+// Slider at 0 = exact cell edges (pixelated, no browser interpolation).
+function applyEdgeBlur(px) {
+  for (const p of ["ovA", "ovB"]) {
+    const el = map.getPane(p);
+    el.style.imageRendering = px > 0 ? "auto" : "pixelated";
+    el.style.filter = px > 0 ? `blur(${px * 0.6}px)` : "";
+  }
+}
+
+// --------------------------------------------------------- data-cell grid
+// The real cell boundaries of the ACTIVE dataset. Spacing comes from the
+// meta's resolution_label ("0.25°" / "0.01°") -- dataset_meta carries no
+// dlat/dlon and datasets.py belongs to another agent.
+// ponytail: lines are drawn on multiples of the step rather than on the true
+// half-cell-offset grid origin; at the >=4 px/cell where this is legible the
+// difference is a couple of pixels. Use real lat0/lon0 if that ever matters.
+
+// The grid draws EVERY data cell -- one line per real cell boundary, never a
+// coarser stand-in -- so it gets denser as you zoom and always shows exactly
+// where the squares are.
+//
+// Two things it has to get right:
+//
+// 1. PHASE. lat0/lon0 from the server are cell CENTRES, so an edge is at
+//    lat0 + (k + 0.5)*d. Drawing on the round multiples of d instead puts
+//    every line through the middle of a cell -- off by half a cell (500 m for
+//    MUR), which still looks like a grid and is simply wrong.
+// 2. WIDTH. A fixed 1 px line on a 1 px cell is 100% ink, which is what turns
+//    the whole map black when zoomed out. So the width is a fraction of the
+//    cell, capped at 1 px: crisp and thin once cells are big, thinning and
+//    fading out on its own as they shrink.
+const CELL_LINE_RATIO = 10;      // width = cell / 10 ...
+const CELL_LINE_MAX_PX = 1;      // ... but never heavier than a hairline
+const MIN_CELL_PX = 1.5;         // below this the line is invisible anyway
+
+const CellGrid = L.GridLayer.extend({
+  createTile(coords) {
+    const c = L.DomUtil.create("canvas"), size = this.getTileSize();
+    c.width = size.x; c.height = size.y;
+    const gr = meta().grid;
+    if (!gr) return c;
+    const nw = map.unproject(coords.scaleBy(size), coords.z);
+    // L.Point has add(), not plus() -- plus() threw on every single tile, so
+    // the checkbox silently did nothing at all.
+    const se = map.unproject(coords.add([1, 1]).scaleBy(size), coords.z);
+    const dLon = se.lng - nw.lng, dLat = nw.lat - se.lat;
+    const dvg = state.lattice ? state.lattice.div : 1;
+    const pxX = size.x * gr.dlon * dvg / dLon, pxY = size.y * gr.dlat * dvg / dLat;
+    if (pxX < MIN_CELL_PX || pxY < MIN_CELL_PX) return c;
+    const g = c.getContext("2d");
+    g.strokeStyle = "rgba(0,0,0,0.55)";
+    g.lineWidth = Math.min(CELL_LINE_MAX_PX, Math.min(pxX, pxY) / CELL_LINE_RATIO);
+    g.beginPath();
+    // The renderer rasterises each cell edge to a whole output row, so the
+    // boundary you can SEE sits at Minv(round(scale*m(lat))/scale) rather than
+    // at the ideal latitude. Draw there, or the line and the colour step
+    // disagree by up to half a row -- 0.5 px at z10 but 7 px at z14, which is
+    // exactly the "grid does not match the squares" everyone notices.
+    // The image is stretched linearly in Mercator between its bounds, and the
+    // renderer built it north-up by REVERSING a south-up row stack. So a cell
+    // edge does not land at rint(scale*m(lat)) on screen -- it lands at row
+    // H-(P(k)-P0) of that stretch. Reproducing the whole expression, rather
+    // than just the rint, is what takes the residual from ~0.4 of an output
+    // row down to nothing.
+    const LT = state.lattice;
+    const mOf = lat => Math.log(Math.tan(Math.PI / 4 + lat * Math.PI / 360));
+    let snapLat = lat => lat;
+    if (LT && LT.n > LT.s) {
+      const P0 = Math.round(LT.scale * mOf(LT.s));
+      const H = Math.round(LT.scale * mOf(LT.n)) - P0;
+      const mN = mOf(LT.n), mS = mOf(LT.s);
+      if (H > 0) snapLat = lat => {
+        const frac = (H - (Math.round(LT.scale * mOf(lat)) - P0)) / H;
+        return (Math.atan(Math.sinh(mN - frac * (mN - mS))) * 180) / Math.PI;
+      };
+    }
+    // columns are exact (longitude is linear in Mercator) but step by `div`
+    // cells when the renderer had to merge them
+    const dv = LT ? LT.div : 1;
+    let k = Math.ceil((nw.lng - gr.lon0) / (gr.dlon * dv) - 0.5);
+    for (let lon = gr.lon0 + (k + 0.5) * gr.dlon * dv; lon < se.lng;
+         lon = gr.lon0 + (++k + 0.5) * gr.dlon * dv) {
+      const x = (lon - nw.lng) / dLon * size.x;
+      g.moveTo(x, 0); g.lineTo(x, size.y);
+    }
+    const y0 = coords.y * size.y;
+    let j = Math.ceil((se.lat - gr.lat0) / (gr.dlat * dv) - 0.5);
+    for (let lat = gr.lat0 + (j + 0.5) * gr.dlat * dv; lat < nw.lat;
+         lat = gr.lat0 + (++j + 0.5) * gr.dlat * dv) {
+      if (Math.abs(lat) >= MLAT) continue;
+      const y = map.project([snapLat(lat), 0], coords.z).y - y0;
+      g.moveTo(0, y); g.lineTo(size.x, y);
+    }
+    g.stroke();
+    return c;
+  },
+});
+const cellGrid = new CellGrid({ pane: "cells" });
+
 // ------------------------------------------------------- frame blob cache
 const frameCache = new Map(); // url -> {blob, vmin, vmax}
 // Raised to the frame count while a timelapse preloads, so the frames fetched
 // at the start of a long run are still there when it wraps around.
 let frameCacheCap = 80;
+
+// Evict cached frames whose URL matches. Needed because a tiled dataset's
+// image can change WITHOUT its URL changing: the same box renders empty before
+// its tiles are downloaded and correct afterwards.
+function dropFrames(pred) {
+  for (const [u, v] of frameCache) {
+    if (!pred(u)) continue;
+    URL.revokeObjectURL(v.blob);
+    frameCache.delete(u);
+  }
+}
 async function frameURL(url) {
   if (frameCache.has(url)) return frameCache.get(url);
   const r = await fetch(url);
   if (!r.ok) throw new Error(await r.text());
   const obj = { blob: URL.createObjectURL(await r.blob()),
-                vmin: r.headers.get("X-Vmin"), vmax: r.headers.get("X-Vmax") };
+                vmin: r.headers.get("X-Vmin"), vmax: r.headers.get("X-Vmax"),
+                // "s,w,n,e" of what the server ACTUALLY drew -- for a tiled
+                // dataset it snaps the box outward to whole tiles, so the
+                // image is bigger than the bbox we asked for and placing it
+                // on the requested box would shift the imagery.
+                bounds: r.headers.get("X-Bounds"),
+                // "scale,over,div" of the raster lattice the server drew on.
+                // The grid overlay snaps to this so its lines sit on the cell
+                // boundaries the IMAGE actually has, not the ideal ones -- the
+                // two differ by up to half an output row, which is invisible on
+                // the ground (~40 m) but several screen pixels past z12.
+                lattice: r.headers.get("X-Lattice") };
   frameCache.set(url, obj);
   if (frameCache.size > frameCacheCap) { // ponytail: crude LRU, evict oldest insertion
     const k = frameCache.keys().next().value;
@@ -335,10 +511,52 @@ async function frameURL(url) {
   return obj;
 }
 
+// The Timelapse tab has its own dataset picker, so every frame fetched while
+// playing (preload AND the live refresh behind showFrame) comes from that
+// dataset -- otherwise the preview would not match the GIF you export.
+const tlDs = () => $("tlDataset").value || state.dataset;
+const overlayDs = () => (state.playing && tlDs()) || state.dataset;
+
+// The Timelapse picker is independent of the map's variable selector, and the
+// two datasets do not share variable NAMES (OISST "sst" vs MUR "analysed_sst").
+// Sending the map's variable to the other dataset is a plain 400. Translate by
+// label -- that is what the user actually picked -- and fall back to its first.
+function varFor(dsid) {
+  const m = state.meta[dsid];
+  if (!m || !m.variables || m.variables[state.var]) return state.var;
+  const want = (meta().variables || {})[state.var];
+  return Object.keys(m.variables).find(k => m.variables[k] === want)
+         || Object.keys(m.variables)[0];
+}
+
+// Auto scale, locked per dataset+variable+date. Without this, every pan is a
+// new box, every box gets its own 2nd/98th percentile, and the whole map
+// recolours -- the same 16 C pixel comes out mid-green in one view and dark
+// blue in the next, which reads as the data changing when only the palette
+// did. The FIRST view of a date establishes the range; panning and zooming
+// then keep it. Changing date, variable or dataset picks a new one, and the
+// Fixed radio still overrides everything.
+const autoScale = new Map();
+const scaleKey = (ds, v, date) => `${ds}|${v}|${date}`;
+
 function overlayURL(date, fixedScale) {
-  let u = `/api/overlay?date=${date}&var=${state.var}&dataset=${state.dataset}`;
+  const ds = overlayDs();
+  let u = `/api/overlay?date=${date}&var=${varFor(ds)}&dataset=${ds}`;
   if (fixedScale) u += `&vmin=${state.vmin}&vmax=${state.vmax}`;
+  else {
+    const lock = autoScale.get(scaleKey(ds, varFor(ds), date));
+    if (lock) u += `&vmin=${lock[0]}&vmax=${lock[1]}`;
+  }
+  // A tiled dataset has no whole-grid image (180M cells); it must always be
+  // asked for a box, so fall back to the live viewport if none is pinned.
+  if (state.meta[ds] && state.meta[ds].tiled)
+    u += `&bbox=${(state.bbox || viewBbox()).map(x => x.toFixed(3)).join(",")}`;
   return u;
+}
+
+function viewBbox() {
+  const b = map.getBounds();
+  return [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()];
 }
 
 function scaleIsFixed() {
@@ -356,8 +574,24 @@ async function refreshOverlay() {
   try {
     const f = await frameURL(url);
     if (!fixed) {
+      const ds = overlayDs();
+      const key = scaleKey(ds, varFor(ds), state.date);
+      if (!autoScale.has(key)) autoScale.set(key, [f.vmin, f.vmax]);
       state.vmin = +f.vmin; state.vmax = +f.vmax;
       $("vmin").value = f.vmin; $("vmax").value = f.vmax;
+    }
+    if (f.lattice && f.bounds) {
+      const [sc, ov, dv] = f.lattice.split(",").map(Number);
+      const [bsy, , bny] = f.bounds.split(",").map(Number);
+      const changed = !state.lattice || state.lattice.scale !== sc
+                      || state.lattice.div !== dv || state.lattice.s !== bsy;
+      state.lattice = { scale: sc, over: ov, div: dv, s: bsy, n: bny };
+      if (changed && map.hasLayer(cellGrid)) cellGrid.redraw();
+    }
+    if (f.bounds) {
+      const [s, w, n, e] = f.bounds.split(",").map(Number);
+      overlayA.setBounds([[s, w], [n, e]]);
+      overlayB.setBounds([[s, w], [n, e]]);
     }
     overlayA.setUrl(f.blob);
     if (state.comparing) {
@@ -382,7 +616,8 @@ function updateLegend() {
 // The status bar holds the live dataset/variable/date controls, so "update"
 // means push state into them -- there is no separate text readout to render.
 function updateStatus() {
-  $("datasetSelect").value = state.dataset;
+  const m = state.meta[state.dataset];
+  $("datasetName").textContent = m ? `${m.name} — ${m.resolution_label}` : "";
   if ($("varSelect").value !== state.var) $("varSelect").value = state.var;
   $("dateInput").value = state.date || "";
 }
@@ -434,11 +669,10 @@ async function selectDataset(id) {
   // locked, and the user learns nothing they could not have been told at once.
   if (!m.dates && srcStatus[id] === "down") {
     islandMsg(t("ds_unavailable"), true);
-    $("datasetSelect").value = prev;
     return;
   }
   if (!m.dates) {
-    $("datasetSelect").disabled = true;
+    $("datasetName").classList.add("busy");
     islandMsg(t("loading_dates"));
     try {
       // a first remote date axis legitimately takes ~90 s; beyond that the
@@ -449,16 +683,17 @@ async function selectDataset(id) {
     } catch (err) {
       m.dates = null;
       islandMsg("⚠ " + err.message.slice(0, 160), true);
-      $("datasetSelect").disabled = false;
-      $("datasetSelect").value = prev;       // stay on something usable
-      return;
+      $("datasetName").classList.remove("busy");
+      return;                                // caller stays on `prev`
     }
-    $("datasetSelect").disabled = false;
+    $("datasetName").classList.remove("busy");
   }
   state.dataset = id;
-  $("datasetSelect").value = id;
   state.dates = m.dates;
+  // a tiled dataset is always rendered for a box; a whole-grid one never is
+  state.bbox = m.tiled ? (state.bbox || viewBbox()) : null;
   rebuildVarSelect();
+  if (map.hasLayer(cellGrid)) cellGrid.redraw();   // cell size changed
   overlayA.setBounds(m.overlay_bounds);
   overlayB.setBounds(m.overlay_bounds);
   const first = state.dates[0], last = state.dates[state.dates.length - 1];
@@ -486,6 +721,8 @@ function setDate(iso, snap = true) {
   state.date = d;
   $("dateInput").value = d;
   refreshOverlay();
+  // a new date needs its own MUR tiles; harmless no-op on a whole-grid dataset
+  scheduleResolution();
 }
 
 function stepDate(dir) {
@@ -493,6 +730,168 @@ function stepDate(dir) {
   const j = Math.min(state.dates.length - 1, Math.max(0, i + dir));
   setDate(state.dates[j], false);
 }
+
+// ------------------------------------------------- resolution follows zoom
+// Zoomed out you get the 0.25 deg global OISST; zoomed in past MUR_ZOOM the
+// visible box is served from MUR at 1 km. Neither switch ever moves the map.
+//
+// MUR tiles are downloaded on demand, so entering a new area starts a tile job
+// and shows a progress bar. "Automatic, but only once per view": every snapped
+// tile-box we have already pulled for the current (date, var) is remembered,
+// so panning back is instant and silent. `murGen` is the cancel token -- the
+// same trick stopPlay/tlGen uses -- so a user who keeps zooming abandons the
+// stale job's polling instead of racing two overlays onto the map.
+const MUR_ID = "mur_okhotsk";
+const VIEW_DEBOUNCE_MS = 600, MUR_POLL_MS = 700;
+// How much of the visible map MUR's rendered box must cover before MUR is
+// allowed on screen. Below this you get a rectangle of 1 km data with bare
+// satellite imagery around it and a hard straight edge between them -- so the
+// map stays on the dataset that covers everything until MUR can too.
+const MUR_COVER = 0.95;
+let murGen = 0, viewTimer = null;
+let murBox = null;                // snapped [w,s,e,n] currently drawn as MUR
+const murDone = new Set();        // "date|var|snapped box" already fetched
+// Boxes whose tile job failed (typically "too many tiles - zoom in further").
+// Without this, falling back to OISST re-fires the zoom handler, which retries
+// MUR, which fails again: a silent request loop. Keyed by box only, so zooming
+// in -- which is what the error asks for -- produces a new box and a new try.
+const murBlocked = new Set();
+
+function murProgress(done, total) {
+  const el = $("murProgress");
+  if (total == null) { el.hidden = true; return; }
+  el.hidden = false;
+  $("murProgressBar").style.width = (total ? done / total * 100 : 0) + "%";
+  $("murProgressText").textContent = I18N[lang].mur_tiles
+    ? I18N[lang].mur_tiles(done, total) : `${done} / ${total}`;
+}
+
+// The server snaps the requested box outward to whole tiles. Mirroring that
+// here gives both the cache key (two viewports inside the same tiles are one
+// fetch) and the extent to test coverage against.
+function snapBox(bbox, tile) {
+  const [[bs, bw], [bn, be]] = MAX_BOUNDS;
+  const f = x => Math.floor(x / tile) * tile, c = x => Math.ceil(x / tile) * tile;
+  return [Math.max(bw, f(bbox[0])), Math.max(bs, f(bbox[1])),
+          Math.min(be, c(bbox[2])), Math.min(bn, c(bbox[3]))];
+}
+
+// Fraction of `view`'s area that `box` covers. Plain lat/lon area is fine --
+// this only ever compares two boxes at the same latitude.
+function coverFrac(view, box) {
+  if (!box) return 0;
+  const w = Math.max(0, Math.min(view[2], box[2]) - Math.max(view[0], box[0]));
+  const h = Math.max(0, Math.min(view[3], box[3]) - Math.max(view[1], box[1]));
+  const area = (view[2] - view[0]) * (view[3] - view[1]);
+  return area > 0 ? (w * h) / area : 0;
+}
+
+async function toOisst(msg) {
+  murProgress(null);
+  if (msg) islandMsg("⚠ " + msg.slice(0, 160), true);
+  murBox = null;
+  state.bbox = null;
+  if (state.dataset !== "oisst_remote") await selectDataset("oisst_remote");
+  else refreshOverlay();
+}
+
+async function applyResolution() {
+  // A/B compare and timelapse both need a frozen dataset underneath them
+  if (state.playing || state.comparing) return;
+  const gen = ++murGen;
+  const murMeta = state.meta[MUR_ID];
+  const bbox = viewBbox();
+
+  // The 1 km switch is opt-IN, and off by default: each new area costs a tile
+  // download of tens of MB, so zooming in should not silently start one. The
+  // map stays on OISST at every zoom until you tick the box.
+  if (!$("autoMur").checked || map.getZoom() < MUR_ZOOM || !murMeta || !murMeta.tiled) {
+    if (state.dataset !== "oisst_remote") await toOisst();
+    else murProgress(null);
+    return;
+  }
+
+  const snapped = snapBox(bbox, murMeta.tile_deg || 5);
+  const box = snapped.join(",");
+  if (murBlocked.has(box)) {
+    if (state.dataset !== "oisst_remote") await toOisst();
+    else murProgress(null);
+    return;
+  }
+
+  // varFor(MUR_ID), not state.var: this runs BEFORE the dataset switch, so
+  // state.var is still the outgoing dataset's name ('sst' for OISST) and the
+  // memo would be keyed to a variable MUR does not have.
+  const key = `${state.date}|${varFor(MUR_ID)}|${box}`;
+  if (!murDone.has(key)) {
+    // Tiles are missing for this view. Showing MUR now is what paints its
+    // rectangle over part of the screen with raw satellite around it, so drop
+    // back to the dataset that covers the whole map -- unless what is already
+    // drawn still covers essentially all of it, in which case leaving it is
+    // smoother than a flicker down to 25 km and back.
+    if (state.dataset === MUR_ID && coverFrac(bbox, murBox) < MUR_COVER) {
+      await toOisst();
+      if (gen !== murGen) return;
+    }
+    let job;
+    try {
+      job = await fetchJSON("/api/tile_job", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dataset: MUR_ID, date: state.date, bbox: snapped, vars: null }),
+      });
+    } catch (err) { if (gen === murGen) { murBlocked.add(box); await toOisst(err.message); } return; }
+    if (gen !== murGen) return;
+
+    // total 0 = every tile already on disk; no bar flash, straight to the image
+    if (job.total > 0) {
+      murProgress(0, job.total);
+      for (;;) {
+        let st;
+        try { st = await fetchJSON(`/api/tile_job_status?id=${job.id}`); }
+        catch (err) { if (gen === murGen) { murBlocked.add(box); await toOisst(err.message); } return; }
+        if (gen !== murGen) { murProgress(null); return; }
+        murProgress(st.done, st.total);
+        if (st.state === "error") {
+          murBlocked.add(box);
+          await toOisst(st.error || t("mur_failed"));
+          return;
+        }
+        if (st.state === "done") break;
+        await new Promise(r => setTimeout(r, MUR_POLL_MS));
+      }
+      murProgress(null);
+    }
+    murDone.add(key);
+    // A box lands in murBlocked on any job failure, including the socket
+    // timeouts and TLS resets this host serves for weeks at a time. One success
+    // proves the network is back, so stop punishing boxes that only failed then.
+    murBlocked.clear();
+  }
+
+  if (gen !== murGen) return;
+  // Only now, with every tile for this box on disk, is MUR safe to show.
+  murBox = snapped;
+  state.bbox = snapped;
+  if (state.dataset !== MUR_ID) {
+    await selectDataset(MUR_ID);
+    if (gen !== murGen || state.dataset !== MUR_ID) return;
+    // selectDataset -> setDate -> scheduleResolution queued a re-entry for
+    // this very box; letting it fire again would just redo the work
+    clearTimeout(viewTimer);
+  }
+  // The overlay URL does not change when tiles arrive -- same date, var and
+  // box -- so frameCache would hand back the EMPTY image it cached from the
+  // render that ran before the download, and the area would stay blank for
+  // good. New tiles make every cached MUR frame stale; drop them.
+  dropFrames(u => u.includes(`dataset=${MUR_ID}`));
+  refreshOverlay();
+}
+
+const scheduleResolution = () => {
+  clearTimeout(viewTimer);
+  viewTimer = setTimeout(applyResolution, VIEW_DEBOUNCE_MS);
+};
+map.on("zoomend moveend", scheduleResolution);
 
 // -------------------------------------------------------------- timelapse
 // Every frame is fetched BEFORE playback starts (progress bar while it runs),
@@ -511,12 +910,62 @@ async function playbackDates() {
   if (specMode()) {
     const dates = resolveRowDates(tlRow);
     if (!dates) throw new Error(t("tl_spec_bad"));
-    const avail = new Set(state.dates);
+    const avail = new Set((state.meta[tlDs()] || {}).dates || state.dates);
     return dates.filter(d => avail.has(d));
   }
+  // the Timelapse tab's own picker: playback frames, and the GIF built from
+  // exactly those frames, must both come from the dataset chosen here
   const q = `start=${$("tlStart").value}&end=${$("tlEnd").value}` +
-            `&gap=${$("gapDays").value}&dataset=${state.dataset}`;
+            `&gap=${$("gapDays").value}&dataset=${tlDs()}`;
   return fetchJSON(`/api/playback_dates?${q}`);
+}
+
+// Play preloads each frame from /api/overlay, which renders ONLY from tiles
+// already on disk -- so a MUR timelapse over dates you have not browsed on the
+// map comes out blank, frame after frame. Fetch each frame's tiles first,
+// through the same job the map uses. Progress is counted in FRAMES, because
+// that is the unit actually chosen; the per-frame tile bar rides along on the
+// map's own progress island.
+async function preloadTiles(gen, dates, dsid) {
+  const m = state.meta[dsid];
+  if (!m || !m.tiled) return true;
+  const box = snapBox(viewBbox(), m.tile_deg || 5);
+  state.bbox = box;                       // frames must ask for the same box
+  const prog = $("tlProg");
+  prog.classList.remove("hidden");
+  prog.max = dates.length; prog.value = 0;
+  const fail = msg => {
+    murProgress(null);
+    $("tlInfo").textContent = "⚠ " + String(msg).slice(0, 200);
+    return false;
+  };
+  for (let i = 0; i < dates.length; i++) {
+    if (gen !== tlGen) return false;
+    let job;
+    try {
+      job = await fetchJSON("/api/tile_job", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dataset: dsid, date: dates[i], bbox: box, vars: null }),
+      });
+    } catch (err) { return fail(err.message); }
+    while (job.total > 0) {
+      let st;
+      try { st = await fetchJSON(`/api/tile_job_status?id=${job.id}`); }
+      catch (err) { return fail(err.message); }
+      if (gen !== tlGen) { murProgress(null); return false; }
+      if (st.state === "error") return fail(st.error || t("mur_failed"));
+      if (st.state === "done") break;
+      murProgress(st.done, st.total);
+      await new Promise(r => setTimeout(r, MUR_POLL_MS));
+    }
+    murProgress(null);
+    prog.value = i + 1;
+    $("tlInfo").textContent = `${t("tl_tiles")} ${i + 1}/${dates.length}`;
+  }
+  // Any of these frames may already be cached from a render that ran before
+  // its tiles existed -- same URL, empty image. Drop them.
+  dropFrames(u => u.includes(`dataset=${dsid}`));
+  return true;
 }
 
 async function preloadFrames(gen) {
@@ -564,6 +1013,8 @@ async function togglePlay() {
   if (tlIdx > scrub.max) tlIdx = 0;
   scrub.value = tlIdx;
   scrub.classList.remove("hidden");
+  if (!await preloadTiles(gen, dates, tlDs())) { stopPlay(); return; }
+  if (gen !== tlGen) return;
   if (!await preloadFrames(gen)) return;
   showFrame(tlIdx);
   tlTimer = setInterval(() => showFrame((tlIdx + 1) % tlDates.length),
@@ -683,8 +1134,8 @@ function exportGif() {
   })();
   const bbox = [b.w, b.s, b.e, b.n].map(x => x.toFixed(2)).join(",");
   const u = `/api/export/timelapse?${tlQuery()}` +
-    `&var=${state.var}&vmin=${$("vmin").value}&vmax=${$("vmax").value}` +
-    `&fps=${$("fps").value}&bbox=${bbox}&dataset=${state.dataset}`;
+    `&var=${varFor(tlDs())}&vmin=${$("vmin").value}&vmax=${$("vmax").value}` +
+    `&fps=${$("fps").value}&bbox=${bbox}&dataset=${tlDs()}`;
   $("tlInfo").textContent = t("rendering");
   const a = document.createElement("a");
   a.href = u; a.download = "timelapse.gif"; a.click();
@@ -1003,8 +1454,10 @@ async function areaGif(a, row) {
   busy(row, true);
   $("drawHint").textContent = t("generating");
   try {
-    await fetchJSON(`/api/areas/${a.id}/gif?dataset=${state.dataset}&${tlQuery()}` +
-      `&var=${state.var}` +
+    // an area GIF is built from tlQuery()'s frames, so it follows the same
+    // Timelapse-tab dataset picker the main GIF export does
+    await fetchJSON(`/api/areas/${a.id}/gif?dataset=${tlDs()}&${tlQuery()}` +
+      `&var=${varFor(tlDs())}` +
       `&vmin=${$("vmin").value}&vmax=${$("vmax").value}&fps=${$("fps").value}`,
       { method: "POST" });
     await refreshAreas();
@@ -1447,6 +1900,15 @@ function renderCoordRows() {
     box.appendChild(div);
   });
   renderCoordLayer();
+  syncCompareBox();
+}
+
+// A comparison needs 2+ checked points: below that the box is greyed out and
+// ignored (its tick is kept, so it comes back once a second point is checked).
+function syncCompareBox() {
+  const ok = coordRows.filter(r => r.checked).length >= 2;
+  $("alsoCompare").disabled = !ok;
+  $("alsoCompareLbl").title = ok ? "" : t("compare_needs2");
 }
 
 function rowFormClick(e) {
@@ -1482,7 +1944,7 @@ function rowFormChange(e) {
   const el = e.target;
   if (el.dataset.ridx === undefined) return;
   const row = rowAt(+el.dataset.ridx);
-  if (el.classList.contains("rowCheck")) { row.checked = el.checked; return; }
+  if (el.classList.contains("rowCheck")) { row.checked = el.checked; syncCompareBox(); return; }
   if (el.dataset.iidx === undefined) return;
   const iidx = +el.dataset.iidx, field = el.dataset.field;
   const it = (el.dataset.kind === "dateItem" ? row.dateItems : row.yearItems)[iidx];
@@ -1531,6 +1993,7 @@ async function startDownload() {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ dataset: coordsDs(), points,
                              generate_pdf: $("alsoPdf").checked,
+                             generate_compare: $("alsoCompare").checked && !$("alsoCompare").disabled,
                              refresh_data: $("refreshData").checked }),
     });
     await pollBatchJob(job.id);
@@ -1572,6 +2035,9 @@ function renderBatchResults(job) {
     return `<div>${p.label}: ${t(STAGE_KEY[p.stage] || "st_pending")}${bars}</div>`;
   });
   if (job.csv_url) lines.push(`<div><a href="${job.csv_url}" download>${t("csv_ready")}</a></div>`);
+  if (job.compare_url) lines.push(`<div><a href="${job.compare_url}" download>${t("compare_ready")}</a></div>`);
+  else if (job.compare_error) lines.push(`<div>${t("compare_label")}: ⚠ ${job.compare_error}</div>`);
+  else if (job.compare_state === "rendering") lines.push(`<div>${t("compare_label")}: ${t("st_rendering")}</div>`);
   $("batchResults").innerHTML = lines.join("");
 }
 
@@ -1596,9 +2062,14 @@ function chartCsv() {
 
 // -------------------------------------------------------------- wire up UI
 $("langBtn").onclick = () => { lang = lang === "en" ? "ru" : "en"; localStorage.setItem("sst_lang", lang); applyLang(); };
-$("datasetSelect").onchange = e => selectDataset(e.target.value);
-$("varSelect").onchange = e => { state.var = e.target.value; refreshOverlay(); };
+$("varSelect").onchange = e => { state.var = e.target.value; refreshOverlay(); scheduleResolution(); };
 $("opacity").oninput = e => { overlayA.setOpacity(e.target.value / 100); overlayB.setOpacity(e.target.value / 100); };
+$("basemapOpacity").oninput = e => basemap.setOpacity(e.target.value / 100);
+$("edgeBlur").oninput = e => applyEdgeBlur(+e.target.value);
+$("autoMur").onchange = () => applyResolution();
+$("gridToggle").onchange = e => {
+  if (e.target.checked) cellGrid.addTo(map); else map.removeLayer(cellGrid);
+};
 document.querySelectorAll("input[name=scaleMode]").forEach(r => r.onchange = refreshOverlay);
 $("vmin").onchange = $("vmax").onchange = () => { if (scaleIsFixed()) refreshOverlay(); };
 $("dateInput").onchange = e => setDate(e.target.value);
@@ -1609,6 +2080,9 @@ $("sameDayYear").onchange = () => { stopPlay(); renderTlSpec(); };
 $("tlScrub").oninput = e => { if (tlDates.length) showFrame(+e.target.value); };
 $("fps").onchange = () => { if (tlTimer) { clearInterval(tlTimer);
   tlTimer = setInterval(() => showFrame((tlIdx + 1) % tlDates.length), 1000 / +$("fps").value); } };
+// a different dataset means different available dates and different frames --
+// whatever is playing was built from the old one
+$("tlDataset").onchange = stopPlay;
 $("exportGifBtn").onclick = exportGif;
 $("gifArea").onchange = e => {
   const a = areas.find(x => x.id === e.target.value);
@@ -1661,11 +2135,6 @@ $("drawPointBtn").onclick = () => startDraw("point");
 $("drawRectBtn").onclick = () => startDraw("rect");
 $("drawCircleBtn").onclick = () => startDraw("circle");
 $("drawPolyBtn").onclick = () => startDraw("polygon");
-$("downloadOverlayBtn").onclick = () => {
-  const a = document.createElement("a");
-  a.href = overlayURL(state.date, true);
-  a.download = `${state.dataset}_${state.date}_${state.var}.png`; a.click();
-};
 $("xMode").onchange = rebuildChart;
 $("chartPngBtn").onclick = () => {
   if (!chart) return;
@@ -1678,13 +2147,14 @@ $("chartCollapseBtn").onclick = () => $("chartPanel").classList.toggle("collapse
 
 // ------------------------------------------------------------------- init
 // ------------------------------------------------------------ loading screen
-// Upper bound on how long the splash waits for the first health sweep. The
-// server's cold sweep probes every source at once on a short timeout, so this
-// resolves in ~1 s when the sources are healthy and ~6 s worst case when one
-// is dead (FIRST_PROBE_TIMEOUT_S x the host's two DNS addresses). The cap is
-// only a safety net against a pathological hang -- reaching it means the dots
-// are still grey when the app opens, which is the thing we are avoiding.
-const SPLASH_HEALTH_CAP_MS = 12000;
+// Upper bound on how long the splash waits for the first health sweep. There
+// is no short "cold" probe any more: the server gives every source the full
+// PROBE_TIMEOUT_S (15 s), so the first sweep is honest but can take ~30 s when
+// a host is dark (the timeout x its two DNS addresses). The splash is supposed
+// to wait for that real verdict however long it takes -- the cap exists only
+// so a pathological hang (server wedged, sweep never finishing) cannot trap
+// the user behind the splash forever.
+const SPLASH_HEALTH_CAP_MS = 45000;
 const SPLASH_MIN_MS = 900;      // don't flash-and-vanish on a warm cache
 const TIP_ROTATE_MS = 6500;
 const TIPS = ["tip_scale", "tip_health", "tip_global",
@@ -1749,20 +2219,23 @@ async function prefetchRemoteDates() {
     ["boot_datasets", async () => {
       ["dateInput", "tlStart", "tlEnd", "dateB"].forEach(wireDMY);
       const info = await fetchJSON("/api/datasets");
-      const sel = $("datasetSelect"), csel = $("coordsDataset");
+      const csel = $("coordsDataset"), tsel = $("tlDataset");
       for (const m of info.gridded) {
         state.meta[m.id] = m;
-        for (const s of [sel, csel]) {
+        for (const s of [csel, tsel]) {
           const o = document.createElement("option");
           o.value = m.id; o.textContent = `${m.name} — ${m.resolution_label}`;
           s.appendChild(o);
         }
       }
-      // point extraction defaults to MUR (1 km, full range), not local OISST
-      csel.value = state.meta.mur_okhotsk ? "mur_okhotsk" : info.gridded[0].id;
+      // point extraction defaults to MUR (1 km, full range)
+      csel.value = state.meta[MUR_ID] ? MUR_ID : info.gridded[0].id;
+      // ...but a timelapse spans many dates, so it defaults to the dataset
+      // that has every one of them cheaply
+      tsel.value = "oisst_remote";
       applyLang();
-      const local = state.meta.oisst_local;
-      const last = local.dates[local.dates.length - 1];
+      const remote = state.meta.oisst_remote;
+      const last = remote.dates[remote.dates.length - 1];
       $("tlStart").value = last.slice(0, 4) + "-05-20";
       $("tlEnd").value = last;
       const lastYear = +last.slice(0, 4);
@@ -1770,7 +2243,16 @@ async function prefetchRemoteDates() {
       tlRow.yearItems = [{ type: "yearRange", from: lastYear - 5, to: lastYear, step: 1 }];
       renderTlSpec();
     }],
-    ["boot_map", async () => { await selectDataset("oisst_local"); boxFromMap(); }],
+    ["boot_map", async () => {
+      // whole Pacific box, newest available date, 0.25 deg -- and this is
+      // where minZoom is pinned, because only now does #map have a size
+      fitWholeBox();
+      applyEdgeBlur(+$("edgeBlur").value);
+      basemap.setOpacity($("basemapOpacity").value / 100);
+      if ($("gridToggle").checked) cellGrid.addTo(map);
+      await selectDataset("oisst_remote");
+      boxFromMap();
+    }],
     ["boot_areas", async () => refreshAreas()],
   ];
 
@@ -1804,7 +2286,7 @@ const HEALTH_POLL_MS = 10000;
 // source the prober already knows is dark instead of hanging on it
 const srcStatus = {};
 
-function healthLine(s) {
+function healthLine(s, inherited) {
   // "reachable" is wrong for a local toolchain -- it is installed or it isn't
   const pre = s.kind === "tool" && (s.status === "ok" || s.status === "down")
     ? "hl_tool_" : "hl_";
@@ -1817,6 +2299,11 @@ function healthLine(s) {
   if (s.error) bits.push("\n" + s.error);
   bits.push("\n" + t(s.kind === "host" ? "hl_role_server" : "hl_role_dataset"));
   if (s.notices) bits.push("\n" + t("hl_notices"));
+  // A dot that is red only because its host is red should say so rather than
+  // implying the dataset was probed and failed on its own.
+  if (inherited || s.via === "server") bits.push("\n" + t("hl_inherited"));
+  // ...and the server dot carries WHY, lifted off ERDDAP's own status page.
+  if (s.cause) bits.push("\n\n" + t("hl_cause") + ":\n" + s.cause);
   return `${s.name}: ${bits.join(" · ")}`;
 }
 
@@ -1830,17 +2317,47 @@ async function pollHealth() {
     // answer three different questions. Local files and the PDF toolchain
     // stay out: they either work or they don't, and "reachable" says nothing
     // useful about them.
-    for (const s of h.sources.filter(s => s.kind === "host" || s.kind === "remote")) {
-      // clickable when the source publishes a status page, a plain chip
-      // otherwise -- same look either way
+    // The datasets LIVE ON the server, so draw them as its children: one
+    // glance says whether the host is the problem or just one dataset.
+    const host = h.sources.filter(s => s.kind === "host");
+    const kids = h.sources.filter(s => s.kind === "remote");
+    // When the host is down, nothing about a dataset ON it was actually
+    // established -- a failed probe there says "could not reach the server",
+    // not "this dataset is broken". `via` is not a reliable marker for that:
+    // passive traffic observation stamps via="traffic" on exactly the same
+    // situation. So key off the host's own state.
+    const hostDown = host.some(s => s.status === "down");
+    const rows = [];
+    for (const s of host) rows.push([s, ""]);
+    kids.forEach((s, i) => rows.push([s, i === kids.length - 1 ? "└─ " : "├─ "]));
+
+    for (const [s, prefix] of rows) {
       const el = document.createElement(s.notices ? "a" : "span");
       if (s.notices) { el.href = s.notices; el.target = "_blank"; el.rel = "noopener"; }
-      el.className = "src " + s.status;
-      el.title = healthLine(s);
+      // `inherited` = this dataset was not judged on its own evidence; the
+      // host is down and took it with it. Rendered grey, not red, so the red
+      // stays on the thing that is actually broken.
+      const inherited = prefix && (hostDown || s.via === "server");
+      el.className = "src " + s.status + (inherited ? " inherited" : "")
+                     + (prefix ? " child" : " parent");
+      el.title = healthLine(s, inherited);
+      if (prefix) {
+        const tw = document.createElement("i");
+        tw.className = "twig";
+        tw.textContent = prefix;
+        el.appendChild(tw);
+      }
       const dot = document.createElement("i");
       dot.className = "dot";
       el.append(dot, s.name);
       box.appendChild(el);
+    }
+    if (h.status_error) {
+      const warn = document.createElement("span");
+      warn.className = "src statusWarn";
+      warn.textContent = "⚠ " + t("hl_status_stale");
+      warn.title = h.status_error;
+      box.appendChild(warn);
     }
   } catch {
     box.textContent = t("hl_noserver");

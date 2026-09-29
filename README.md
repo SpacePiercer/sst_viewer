@@ -93,6 +93,15 @@ cached keeps working.
   Quarto (~30–60 s/report; needs Quarto + R with
   ggplot2/dplyr/lubridate/broom, already installed). Output lands in
   `library/reports/` (PDFs) and `library/downloads/` (CSVs).
+  **Also generate one comparison PDF** (greyed out until 2+ rows are
+  checked) adds a single document for reading every point at once: a
+  satellite locator map with numbered, colour-coded points (north to south),
+  a colour-shaded point × year mean table, then per year a map strip beside
+  the daily line chart (lines labelled by number at their ends) and a
+  north-at-top heatmap of each point's difference from its own window mean,
+  its rows joined to the dots by leader lines (`reports/compare.qmd`; the map
+  is stitched from Esri World Imagery tiles at render time, so it needs
+  internet). Both report templates open with a clickable table of contents.
 - **Saved areas:** draw a point / rectangle / circle / polygon on the map
   (hand-rolled on Leaflet events, no plugin), name it, and the current
   dataset/variable/date/scale are stored with it in `areas.json`. Per area:
@@ -194,8 +203,14 @@ whether data flows, not whether the server process is alive.
 - Rendered overlay PNGs and downloaded fields cache in `cache/` (safe to
   delete anytime — saved areas/media are NOT in there).
 - Overlay PNGs are resampled to Web Mercator rows server-side so they align
-  with the basemap; MUR overlays are downsampled to ≤1500 px on the long side
-  (full 0.01° resolution is kept in the cached fields for point queries).
+  with the basemap, onto a per-dataset lattice that gives every data row at
+  least one pixel (so nothing is dropped and blocks keep the same size and
+  place at every zoom). PNGs are capped at 24 Mpx total and 4096 px a side
+  (Chrome silently resamples anything taller, which slides the blocks off
+  the grid lines); past a cap the row oversampling is given back first, then
+  the grid degrades by a whole number of cells per pixel, never a fractional
+  resample.
+  Full 0.01° resolution is kept in the cached fields for point queries.
 - Full map-with-basemap PNG export isn't implemented; use a screenshot for a
   composed map image.
 - Area subsets don't cross the antimeridian (the study region doesn't).

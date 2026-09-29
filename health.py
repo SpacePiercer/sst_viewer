@@ -37,6 +37,7 @@ steady state. The /version probe fires only when the datasets stop vouching,
 which is exactly when the distinction matters.
 """
 import random
+import re
 import threading
 import time
 import urllib.parse
@@ -46,12 +47,11 @@ import datasets as D
 TICK_S = 30           # thread wake interval; at most ONE remote probe per tick
 FRESH_S = 60          # a source seen this recently (probe or real traffic) is skipped
 PROBE_TIMEOUT_S = 15  # per address tried, not per probe -- see _tick()
-# The FIRST sweep has a different job from every later one: the loading screen
-# is waiting on it, so it needs a verdict fast, not a verdict that is right
-# about a merely-slow server. 15 s x 2 DNS addresses = ~30 s of grey dots,
-# which is what this exists to avoid. A false "down" here self-corrects on the
-# next tick, which re-probes with the full timeout.
-FIRST_PROBE_TIMEOUT_S = 3
+# The first sweep used to run on a 3 s timeout so the loading screen got a fast
+# verdict. It got a fast WRONG verdict: any source slower than 3 s came up red,
+# the app opened claiming the server was offline, and the next tick quietly
+# corrected it to green 30 s later. The splash now waits for the real answer
+# (SPLASH_HEALTH_CAP_MS in app.js), so there is one timeout and it is honest.
 SLOW_MS = 4000        # answered, but slow enough that the user should know
 # consecutive-failure backoff: don't hammer a source that is already down
 BACKOFF_S = (60, 120, 300, 600, 900)
@@ -63,10 +63,74 @@ BACKOFF_S = (60, 120, 300, 600, 900)
 # coastwatch.pfeg.noaa.gov goes dark, which is exactly when someone clicks it.
 ERDDAP_STATUS_URL = "https://upwell.pfeg.noaa.gov/erddap/status.html"
 
+# ERDDAP's status page is the only place that says WHY the host is unhappy, and
+# it is plain enough to read: one <pre> block with a handful of summary lines,
+# then a per-dataset "Reasons for failing to load" section. We pull the summary
+# for the server dot, and look our own dataset ids up in the reasons so a
+# dataset only gets its own note when the page actually names it. As of
+# Sep 2026 neither jplMURSST41 nor ncdcOisst21Agg_LonPM180 appears there, so
+# that lookup is normally empty -- which is the honest answer, not a gap.
+STATUS_TTL_OK_S = 900     # refresh at most every 15 min while things are fine
+STATUS_TTL_BAD_S = 120    # ...and more eagerly while something is down
+_STATUS = {"fetched": 0.0, "summary": None, "reasons": {}, "error": None}
+
+_SUMMARY_KEYS = (
+    "Startup was at",
+    "Last major LoadDatasets",
+    "nTotalDatasets",
+    "n Datasets Failed To Load",
+)
+
+
+def _parse_status(text):
+    """(summary lines, {datasetID: reason}) from the status page HTML."""
+    import html as _html
+
+    blocks = re.findall(r"<pre>(.*?)</pre>", text, re.S)
+    if not blocks:
+        return [], {}
+    body = _html.unescape(re.sub(r"<[^>]+>", "", blocks[0]))
+    lines = [x.strip() for x in body.splitlines()]
+
+    summary = [l for l in lines if any(l.startswith(k) for k in _SUMMARY_KEYS)]
+    # "datasetID: <whatever went wrong>" inside the reasons section
+    reasons = {}
+    for l in lines:
+        m = re.match(r"^([A-Za-z0-9_]{4,}):\s+(\S.*)$", l)
+        if m:
+            reasons.setdefault(m.group(1), m.group(2)[:200])
+    return summary, reasons
+
+
+def _refresh_status(force=False):
+    """Fetch + parse the status page, at most once per TTL. Never raises."""
+    any_down = any(v["status"] == "down" for v in _STATUS_SOURCES())
+    ttl = STATUS_TTL_BAD_S if any_down else STATUS_TTL_OK_S
+    if not force and time.time() - _STATUS["fetched"] < ttl:
+        return
+    _STATUS["fetched"] = time.time()
+    try:
+        raw = D._http_get_raw(ERDDAP_STATUS_URL, timeout=20)
+        text = raw.decode("utf-8", "replace") if isinstance(raw, bytes) else str(raw)
+        summary, reasons = _parse_status(text)
+        _STATUS.update(summary=summary, reasons=reasons, error=None)
+    except Exception as e:
+        # The status page lives on upwell precisely so it survives coastwatch
+        # going dark -- but if it is unreachable too, say so rather than
+        # showing a stale cause as if it were current.
+        _STATUS["error"] = str(e)[:160]
+
+
+def _STATUS_SOURCES():
+    with _LOCK:
+        return [dict(v) for v in _STATE.values()]
+
+
 _LOCK = threading.RLock()
 _STATE = {}           # source id -> mutable status dict
 _HOSTS = {}           # netloc -> [source id, ...]  (for passive observation)
 _PROBING = set()      # source ids with an in-flight probe
+_ERDDAP_IDS = {}      # source id -> ERDDAP datasetID (for status-page lookups)
 _thread = None
 
 
@@ -149,6 +213,7 @@ def _build():
         }
         if host:
             _HOSTS.setdefault(host, []).append(ds.id)
+            _ERDDAP_IDS[ds.id] = ds.ERDDAP_ID
     _STATE["reports"] = {
         "id": "reports", "name": "PDF reports", "kind": "tool", "host": None,
         "status": "unknown", "latency_ms": None, "checked": 0.0, "error": None,
@@ -219,7 +284,7 @@ def _tick():
         # bound sustained load, not one request per source, once.
         cold = [s for s in remote if not s["checked"]]
         if cold:
-            batch, timeout = cold, FIRST_PROBE_TIMEOUT_S
+            batch, timeout = cold, PROBE_TIMEOUT_S
         else:
             # steady state: one dataset probe per tick, least-recently-checked
             # first, so N datasets cost 1 dataset request per tick
@@ -229,16 +294,12 @@ def _tick():
     # not answering at all, asking each dataset the same question again only
     # adds load to a struggling host and tells the user nothing new.
     for st in free + server:
-        was_cold = not st["checked"]
         with _LOCK:
             _PROBING.add(st["id"])
-        ok, ms, err = _run_probe(st, FIRST_PROBE_TIMEOUT_S if was_cold
-                                 else PROBE_TIMEOUT_S)
+        ok, ms, err = _run_probe(st, PROBE_TIMEOUT_S)
         with _LOCK:
             _PROBING.discard(st["id"])
             _record(st["id"], ok, ms, err, "probe")
-            if was_cold and not ok:
-                _STATE[st["id"]]["_next"] = time.time() + TICK_S
     with _LOCK:
         srv = _STATE["erddap_server"]
         if srv["status"] == "down":
@@ -274,17 +335,13 @@ def _tick():
                 # ...and when one fails, re-probe the server next tick: that is
                 # what separates "ERDDAP is down" from "this dataset is broken".
                 _STATE["erddap_server"]["_next"] = 0.0
-            if cold and not ok:
-                # the short startup timeout can misjudge a merely-slow server,
-                # so confirm at full timeout on the next tick instead of
-                # sitting on the 60 s failure backoff
-                _STATE[st["id"]]["_next"] = time.time() + TICK_S
 
 
 def _loop():
     while True:
         try:
             _tick()
+            _refresh_status()
         except Exception:
             pass  # a monitor that can die is worse than one that misses a tick
         # jitter so probes never lock onto a wall-clock boundary
@@ -313,4 +370,18 @@ def snapshot():
             }
             for s in _STATE.values()
         ]
-    return {"tick_s": TICK_S, "fresh_s": FRESH_S, "sources": sources}
+    # Attach the cause, so a red dot can say WHY rather than just "down".
+    # A dataset gets its own note only when the status page names its id;
+    # otherwise the server's note is the whole story and repeating it on every
+    # dataset would just be noise.
+    for src in sources:
+        eid = _ERDDAP_IDS.get(src["id"])
+        if eid and eid in _STATUS["reasons"]:
+            src["cause"] = _STATUS["reasons"][eid]
+        elif src["kind"] == "host":
+            src["cause"] = "\n".join(_STATUS["summary"] or [])
+    return {"tick_s": TICK_S, "fresh_s": FRESH_S, "sources": sources,
+            "status_url": ERDDAP_STATUS_URL,
+            "status_error": _STATUS["error"],
+            "status_age_s": (None if not _STATUS["fetched"]
+                             else round(now - _STATUS["fetched"]))}
