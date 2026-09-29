@@ -53,7 +53,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 HERE = Path(__file__).resolve().parent
 OISST_DIR = HERE / "data" / "oisst_may20_july1"  # self-contained, no cross-folder deps
-CACHE = Path(os.environ.get("SST_CACHE", Path.home() / "sst_cache"))  # outside OneDrive: regenerable, churns daily
+CACHE = Path(os.environ.get("SST_CACHE", Path(__file__).resolve().parent / "cache"))  # gitignored, regenerable
 FIELDS = CACHE / "fields"
 LIBRARY = HERE / "library"          # user content: NOT under cache/
 CACHE.mkdir(exist_ok=True)

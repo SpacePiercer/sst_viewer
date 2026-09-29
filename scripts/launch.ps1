@@ -30,7 +30,7 @@ if ($old) {
     Write-Output "stopped the previous sst_viewer instance"
 }
 
-$cacheDir = if ($env:SST_CACHE) { $env:SST_CACHE } else { Join-Path $HOME "sst_cache" }
+$cacheDir = if ($env:SST_CACHE) { $env:SST_CACHE } else { Join-Path (Split-Path $PSScriptRoot -Parent) "cache" }
 New-Item -ItemType Directory -Force -Path $cacheDir | Out-Null
 $log = Join-Path $cacheDir "uvicorn.log"
 $errLog = Join-Path $cacheDir "uvicorn.err.log"

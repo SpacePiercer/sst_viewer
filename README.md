@@ -1,11 +1,46 @@
-# sst_viewer
+# SST Viewer
 
-Interactive web map for the SST datasets in this project.
+Interactive web map and report generator for **sea surface temperature (SST)**
+around the Russian Far East (Sea of Okhotsk, Kamchatka, Primorye). It is built
+for day-to-day coastal research work: browse satellite SST fields, pull time
+series for exact coastal points, and turn them into PDF trend reports.
+
+## The idea
+
+Satellite SST products (NOAA OISST, GHRSST MUR) are free but awkward to use:
+each lives on its own ERDDAP server, answers slowly, and returns raw NetCDF.
+Answering a simple question such as *"how has early-summer water temperature
+off these five capes changed since 2000?"* usually means scripts, manual
+downloads and a separate R analysis. SST Viewer puts the whole loop in one
+browser tab: **look at the map → pick points → download → get a report.**
+
+## Current state
+
+A working single-user app that runs locally (FastAPI + Leaflet, R/Quarto for reports).
+
+- Three datasets: a local OISST archive (fully offline), OISST v2.1 global and
+  MUR 0.01° from NOAA ERDDAP, fetched on demand and cached forever.
+- Map with timelapse, GIF export, A/B swipe compare, measuring, saved areas and
+  point/area charts; EN/RU interface.
+- Batch download for any list of coordinates with flexible date/year builders,
+  producing one CSV plus per-point PDF trend reports and a multi-point comparison PDF.
+- Live source-health indicators, nightly cache warming, and batch verification scripts.
+- Smoke, cache, health and tile-alignment tests.
+- A hardened public-hosting setup (accounts, Docker, deploy runbook) was built and
+  then rolled back. For now the app runs locally only.
+
+## Ideal state
+
+- Hosted online for a small research group, with accounts, per-user saved areas
+  and a shared report library.
+- More datasets (chlorophyll, sea ice, wind) on the same map and in the same reports.
+- Scheduled reports: pick points once, get an updated comparison PDF every season.
+- Automatic detection and flagging of upwelling events and marine heatwaves along the coast.
+
 
 ## Run
 
-Easiest: `powershell -File scripts\launch.ps1` (also invokable as the
-`launch-sst-viewer` Claude skill) — starts the server in the background if
+Easiest: `powershell -File scripts\launch.ps1` — starts the server in the background if
 it isn't already running, and opens the browser.
 
 Manual:
@@ -220,9 +255,9 @@ whether data flows, not whether the server process is alive.
 `app.py`/`datasets.py`/`reports.py`/`health.py` + `static/` are the running app.
 `data/` holds the local OISST archive (`oisst_may20_july1/`, moved in from
 `RProject/` so the app has no cross-folder dependency) plus generated
-coastal-points CSVs/TXTs (per-region offshore sample points, from the
-`coastal-points` skill). `scripts/` holds one-off tools: `make_coast_points.py`
-(the coastal-points engine) and `launch.ps1` (starts the server + opens the
+coastal-points CSVs/TXTs (per-region offshore sample points, made by
+`scripts/make_coast_points.py`). `scripts/` holds one-off tools: `make_coast_points.py`
+(generates offshore sample points along a coastline) and `launch.ps1` (starts the server + opens the
 browser). `reports/template.qmd` is the shared PDF report template. `cache/`
 and `library/` (including `library/reports/` and `library/downloads/`) are
 generated/user content (gitignored) — see above.
