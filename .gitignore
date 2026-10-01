@@ -9,3 +9,20 @@ data/oisst_may20_july1/
 # agent / planning docs (kept locally, never published)
 .claude/
 PROMPT*.md
+
+# --- standard (added 2026-09-30) ---
+*.py[cod]
+.venv/
+venv/
+env/
+.env
+.env.*
+!.env.example
+.pytest_cache/
+.ipynb_checkpoints/
+*.log
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+desktop.ini
