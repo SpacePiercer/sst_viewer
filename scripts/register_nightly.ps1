@@ -18,7 +18,9 @@ if (-not (Test-Path $script)) { Write-Error "script not found: $script"; exit 1 
 # output into $log, so nothing is lost. --hours 6 keeps retrying a dark ERDDAP.
 $args = "`"$script`" --yes --hours 6 --every 15"
 
-$action  = New-ScheduledTaskAction -Execute $py -Argument $args -WorkingDirectory $root
+# Launched via agentic-os hidden.vbs (wscript has no console, so no window flashes).
+$hidden = "C:\Users\Georgii\GitHub\agentic-os\core\hidden.vbs"
+$action  = New-ScheduledTaskAction -Execute "wscript.exe" -Argument "`"$hidden`" `"$py`" $args" -WorkingDirectory $root
 $trigger = New-ScheduledTaskTrigger -Daily -At 3:30am
 $set     = New-ScheduledTaskSettingsSet -StartWhenAvailable `
              -DontStopIfGoingOnBatteries -AllowStartIfOnBatteries `
