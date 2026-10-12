@@ -23,6 +23,7 @@ params:
   strip_w: 0
   strip_h: 0
   dataset: "MUR"
+  interp: ""
 ---
 
 ```{r setup, include=FALSE}
@@ -92,6 +93,22 @@ st <- data[data$sub, ] %>% arrange(n, date) %>%
   transmute(Point = as.character(key), Date = format(date), Source = dataset,
             `SST (°C)` = sprintf("%.2f", value))
 cat(knitr::kable(st, format = "latex", booktabs = TRUE), sep = "\n")
+```
+
+```{r interp, eval=(nzchar(params$interp)), results='asis'}
+cat("\n# Estimated MUR values\n\n",
+    "MUR has no valid value on these requested days (missing, or rejected as false",
+    "summer ice). Where MUR is valid on both the day before and the day after, the",
+    "estimate is their linear interpolation. Estimates are shown here only; they",
+    "are not in the charts or the CSV.\n\n")
+ie <- read.csv(params$interp)
+it <- data.frame(Point = pp$key[match(ie$label, pp$label)], Date = ie$date,
+                 `OISST used (°C)` = ifelse(is.na(ie$oisst), "-", sprintf("%.2f", ie$oisst)),
+                 `MUR day-1 (°C)` = sprintf("%.2f", ie$mur_prev),
+                 `MUR day+1 (°C)` = sprintf("%.2f", ie$mur_next),
+                 `Estimate (°C)` = sprintf("%.2f", ie$estimate), check.names = FALSE)
+it <- it[order(it$Point, it$Date), ]
+cat(knitr::kable(it, format = "latex", booktabs = TRUE), sep = "\n")
 ```
 
 # Mean SST per point and year

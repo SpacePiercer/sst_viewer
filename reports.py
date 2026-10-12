@@ -217,6 +217,43 @@ def mur_ice_fallback(df, lat, lon, refresh=False):
                               series("oisst_remote", "sst", iced))
 
 
+# ------------------------------------------------ MUR gap estimate (PDF only)
+# A requested day with no valid MUR value (missing, or rejected by the ice
+# fallback above) is estimated from MUR on day-1 and day+1, but only when both
+# are valid. Shown in an optional PDF section; never written to any CSV.
+
+def interp_estimates(bad, valid, oisst):
+    """Pure. bad: ISO dates lacking valid MUR; valid: {date: MUR value};
+    oisst: {date: OISST value used}. Linear interpolation at the midpoint of
+    two neighbours one day each side = their mean."""
+    rows = []
+    for d in bad:
+        t = pd.Timestamp(d)
+        p, n = ((t + pd.Timedelta(days=k)).strftime("%Y-%m-%d") for k in (-1, 1))
+        if p in valid and n in valid:
+            rows.append([d, oisst.get(d), valid[p], valid[n], (valid[p] + valid[n]) / 2])
+    return pd.DataFrame(rows, columns=["date", "oisst", "mur_prev", "mur_next", "estimate"])
+
+
+def mur_interp(df, requested, lat, lon, ds, var, refresh=False):
+    """Estimates for one MUR point, or None. df: final frame after the ice
+    fallback. Neighbour validity reuses the same fetch cache and ice rule."""
+    bad = sorted(set(requested) - set(df.loc[df["dataset"] == "MUR", "date"]))
+    if not bad:
+        return None
+    neigh = sorted({(pd.Timestamp(d) + pd.Timedelta(days=k)).strftime("%Y-%m-%d")
+                    for d in bad for k in (-1, 1)})
+    f, _ = point_frame_cached(ds, "mur_okhotsk", lat, lon, var, neigh, refresh)
+    if f is None:
+        return None
+    f["dataset"] = "MUR"
+    f = mur_ice_fallback(f, lat, lon, refresh)
+    valid = dict(zip(f.loc[f["dataset"] == "MUR", "date"], f.loc[f["dataset"] == "MUR", "sst_celsius"]))
+    o = df[df["dataset"] == "OISST"]
+    est = interp_estimates(bad, valid, dict(zip(o["date"], o["sst_celsius"])))
+    return None if est.empty else est
+
+
 def _describe_dates(dates):
     """Human-readable date-range summary for the PDF subtitle -- distinguishes
     a plain range within one year from a day-range repeated across years, so
@@ -278,19 +315,24 @@ def _quarto_render(template, params, tmpdir, on_progress=None):
     return rendered
 
 
-def render_pdf(df, lat, lon, label, ds_name, dataset_id, date_summary, on_progress=None):
+def render_pdf(df, lat, lon, label, ds_name, dataset_id, date_summary, on_progress=None,
+               interp=None):
     """Render the shared template for one point's already-fetched frame.
     Returns the final Path under library/reports/."""
     tmpdir = Path(tempfile.mkdtemp(prefix="sst_report_"))
     try:
         csv_path = tmpdir / "data.csv"
         df[["date", "sst_celsius", "sst_anomaly", "dataset"]].to_csv(csv_path, index=False)
-        rendered = _quarto_render(TEMPLATE, {
+        params = {
             "title": f"SST Analysis For {label}",
             "subtitle": f"{ds_name} \u00b7 {date_summary}",
             "coords": _fmt_coords(lat, lon), "source": csv_path,
             "dataset": DATASET_TAG.get(dataset_id, dataset_id),
-        }, tmpdir, on_progress)
+        }
+        if interp is not None:
+            params["interp"] = tmpdir / "interp.csv"
+            interp.to_csv(params["interp"], index=False)
+        rendered = _quarto_render(TEMPLATE, params, tmpdir, on_progress)
 
         safe_name = _SAFE.sub("_", label).strip("_") or "point"
         dest = REPORTS_DIR / f"{safe_name}_{dataset_id}_{uuid.uuid4().hex[:6]}.pdf"
@@ -452,7 +494,7 @@ def _spread(pos, min_d, iters=60):
     return {k: (x, y) for k, (x, y) in pos.items()}
 
 
-def render_compare_pdf(rows, ds_name, dataset_id, date_summary, on_progress=None):
+def render_compare_pdf(rows, ds_name, dataset_id, date_summary, on_progress=None, interp=None):
     """rows: DataFrame with lat, lon, label, date, value, dataset (the batch CSV).
     Needs >= 2 labels. Returns the final Path under library/reports/."""
     pts = (rows.groupby("label", sort=False)[["lat", "lon"]].first()
@@ -473,14 +515,18 @@ def render_compare_pdf(rows, ds_name, dataset_id, date_summary, on_progress=None
         csv_path = tmpdir / "data.csv"
         rows.merge(pts[["label", "n", "colour"]], on="label")[
             ["n", "label", "colour", "date", "value", "dataset"]].to_csv(csv_path, index=False)
-        rendered = _quarto_render(COMPARE_TEMPLATE, {
+        params = {
             "title": f"SST Comparison, {len(pts)} Points",
             "subtitle": f"{ds_name} \u00b7 {date_summary}",
             "source": csv_path, "map": tmpdir / "map.png",
             "points": tmpdir / "points.csv", "strip": tmpdir / "strip.rgb",
             "strip_w": sw, "strip_h": sh,
             "dataset": DATASET_TAG.get(dataset_id, dataset_id),
-        }, tmpdir, on_progress)
+        }
+        if interp is not None:
+            params["interp"] = tmpdir / "interp.csv"
+            interp.to_csv(params["interp"], index=False)
+        rendered = _quarto_render(COMPARE_TEMPLATE, params, tmpdir, on_progress)
         dest = REPORTS_DIR / f"comparison_{len(pts)}pts_{dataset_id}_{uuid.uuid4().hex[:6]}.pdf"
         shutil.move(str(rendered), str(dest))
         return dest
@@ -520,6 +566,7 @@ def start_batch_job(dataset_id, points, generate_pdf, refresh_data=False,
 
     def worker():
         rows = []
+        interps = []  # per-point MUR gap estimates, PDF only (never in the CSV)
         unreachable = None  # first transport-level failure aborts the rest
         for i, p in enumerate(points):
             entry = job["points"][i]
@@ -544,6 +591,11 @@ def start_batch_job(dataset_id, points, generate_pdf, refresh_data=False,
                         df = mur_ice_fallback(df, p["lat"], p["lon"], refresh_data)
                 if df is None or df.empty:
                     raise ValueError("no data for these dates")
+                est = None
+                if dataset_id == "mur_okhotsk":
+                    est = mur_interp(df, p["dates"], p["lat"], p["lon"], ds, var, refresh_data)
+                    if est is not None:
+                        interps.append(est.assign(label=p["label"]))
                 for _, r in df.iterrows():
                     rows.append([p["lat"], p["lon"], p["label"], r["date"],
                                  r["sst_celsius"], r["dataset"]])
@@ -551,7 +603,8 @@ def start_batch_job(dataset_id, points, generate_pdf, refresh_data=False,
                     entry["stage"] = "rendering"
                     pdf = render_pdf(df, p["lat"], p["lon"], p["label"], ds.name,
                                      dataset_id, _describe_dates(p["dates"]),
-                                     on_progress=lambda f: entry.__setitem__("render_frac", f))
+                                     on_progress=lambda f: entry.__setitem__("render_frac", f),
+                                     interp=est)
                     entry["pdf_url"] = f"/library/reports/{pdf.name}"
                 entry["status"] = "done"
                 entry["stage"] = "done"
@@ -580,7 +633,8 @@ def start_batch_job(dataset_id, points, generate_pdf, refresh_data=False,
                 try:
                     pdf = render_compare_pdf(
                         frame, ds.name, dataset_id,
-                        _describe_dates(sorted({d for p in points for d in p["dates"]})))
+                        _describe_dates(sorted({d for p in points for d in p["dates"]})),
+                        interp=pd.concat(interps) if interps else None)
                     job["compare_url"] = f"/library/reports/{pdf.name}"
                     job["compare_state"] = "done"
                 except Exception as e:

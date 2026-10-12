@@ -19,6 +19,7 @@ params:
   coords: ""
   source: ""
   dataset: "MUR"
+  interp: ""
 ---
 
 ```{r setup, include=FALSE}
@@ -160,6 +161,21 @@ fmt_p <- function(p) if (is.na(p)) "n/a" else if (p < 0.001) "< 0.001" else spri
 # Coordinates
 
 `r params$coords`
+
+```{r interp, eval=(nzchar(params$interp)), results='asis'}
+cat("\n# Estimated MUR values\n\n",
+    "MUR has no valid value on these requested days (missing, or rejected as false",
+    "summer ice). Where MUR is valid on both the day before and the day after, the",
+    "estimate is their linear interpolation. Estimates are shown here only; they",
+    "are not in the charts or the CSV.\n\n")
+ie <- read.csv(params$interp)
+it <- data.frame(Date = ie$date,
+                 `OISST used (°C)` = ifelse(is.na(ie$oisst), "-", sprintf("%.2f", ie$oisst)),
+                 `MUR day-1 (°C)` = sprintf("%.2f", ie$mur_prev),
+                 `MUR day+1 (°C)` = sprintf("%.2f", ie$mur_next),
+                 `Estimate (°C)` = sprintf("%.2f", ie$estimate), check.names = FALSE)
+cat(knitr::kable(it, format = "latex", booktabs = TRUE), sep = "\n")
+```
 
 # How to read the trend lines
 
