@@ -18,6 +18,7 @@ params:
   subtitle: ""
   coords: ""
   source: ""
+  dataset: "MUR"
 ---
 
 ```{r setup, include=FALSE}
@@ -45,6 +46,21 @@ data$doy <- yday(data$date)
 data <- data[order(data$date), ]
 
 caption <- "Based on SST data fetched live via sst_viewer"
+
+# Values taken from another dataset (MUR false summer ice -> OISST) are ringed
+# on every chart that shows them and listed in "Substituted values".
+data$sub <- data$dataset != params$dataset
+n_sub <- sum(data$sub)
+base_caption <- caption  # base-R plots: one-line sub, the ring gets a legend()
+if (n_sub) caption <- paste0(caption, "\nPurple ring = OISST value used instead of MUR (false summer ice)")
+sub_ring <- function(d, x, y) if (any(d$sub))
+  geom_point(data = d[d$sub, ], aes(x = {{ x }}, y = {{ y }}), inherit.aes = FALSE,
+             shape = 21, size = 4.5, stroke = 1.1, colour = "#9b30d9")
+base_ring <- function(x, y) if (n_sub) {
+  points(x[data$sub], y[data$sub], cex = 2.2, lwd = 2, col = "#9b30d9")
+  legend("bottomleft", "OISST value (MUR false summer ice)", pch = 1, pt.cex = 2.2,
+         pt.lwd = 2, col = "#9b30d9", bty = "n", cex = 0.8)
+}
 
 # ---------------------------------------------------------------- shape
 # Every section below is gated on this profile, so that one template covers
@@ -160,6 +176,18 @@ not rule out "no real trend" even if the best-estimate line slopes.
 "lm" stands for "linear model" — a straight-line fit, the simplest and most
 common trend estimator used here.
 
+```{r substituted, eval=(n_sub > 0), results='asis'}
+cat("\n# Substituted values\n\n",
+    "In May-September MUR sometimes flags open water here as sea ice (its ice",
+    "input, OSI SAF passive microwave, mistakes land/water-mixed coastal pixels",
+    "for ice) and pins SST to -1.8 °C. On these dates OISST v2.1 showed no ice",
+    "at its nearest ocean cell, so its SST is used instead. They are ringed in",
+    "purple on every chart.\n\n")
+st <- data.frame(Date = format(data$date[data$sub]), Source = data$dataset[data$sub],
+                 `SST (°C)` = sprintf("%.2f", data$sst_celsius[data$sub]), check.names = FALSE)
+cat(knitr::kable(st, format = "latex", booktabs = TRUE), sep = "\n")
+```
+
 \newpage
 # What this report covers
 
@@ -193,13 +221,15 @@ if (length(notes)) {
 
 ```{r group1}
 plot(data$date, data$sst_celsius, main = "SST over the requested dates",
-     xlab = "Date", ylab = "SST in Celsius", sub = caption)
+     xlab = "Date", ylab = "SST in Celsius", sub = base_caption)
+base_ring(data$date, data$sst_celsius)
 ```
 
 ```{r group1-anom, eval=has_anomaly}
 plot(sst_anomaly ~ date, data = data,
      main = "SST anomaly vs. same-calendar-day mean",
-     xlab = "Date", ylab = "Anomaly (°C)", sub = caption)
+     xlab = "Date", ylab = "Anomaly (°C)", sub = base_caption)
+base_ring(data$date, data$sst_anomaly)
 ```
 
 ```{r cond-window, results='asis'}
@@ -217,7 +247,8 @@ if (has_interannual) {
 } else {
   p <- p + geom_point() + geom_line(aes(group = 1))
 }
-print(p + labs(title = "SST by calendar day", x = "Date (month-day)",
+print(p + sub_ring(data, md, sst_celsius) +
+        labs(title = "SST by calendar day", x = "Date (month-day)",
                y = "SST in Celsius", caption = caption) +
         theme(axis.text.x = element_text(angle = 30, hjust = 1)))
 ```
@@ -255,7 +286,7 @@ cat(sprintf(paste("Each year is reduced to its mean over the %d requested day(s)
 
 ```{r trend-plot, eval=has_interannual}
 ym <- data |> group_by(year) |>
-  summarise(mean_sst_celsius = mean(sst_celsius, na.rm = TRUE), .groups = "drop")
+  summarise(mean_sst_celsius = mean(sst_celsius, na.rm = TRUE), sub = any(sub), .groups = "drop")
 
 # x stays NUMERIC (not factor(year)): geom_smooth on a discrete axis fits
 # against category position, so with non-consecutive years (2003, 2008, 2016,
@@ -263,6 +294,7 @@ ym <- data |> group_by(year) |>
 # report a slope per position instead of per year. year_axis() gives the same
 # every-year-labelled look while keeping the fit in real °C/year.
 base <- ggplot(ym, aes(x = year, y = mean_sst_celsius)) + geom_point(size = 2) +
+  sub_ring(ym, year, mean_sst_celsius) +
   labs(title = "Mean SST by year", x = "Year", y = "SST in Celsius",
        caption = caption) +
   year_axis(ym$year)
@@ -350,6 +382,7 @@ for (k in seq_along(show_md)) {
   if (k > 1) cat("\\newpage\n")
   cat(sprintf("\n\\subsection{SST on %s for years: %d-%d}\n\n", m, yl, yh))
   p <- ggplot(sub, aes(x = year, y = sst_celsius)) + geom_point(size = 2) +
+    sub_ring(sub, year, sst_celsius) +
     labs(title = sprintf("SST on %s, %d-%d", m, yl, yh),
          x = "Year", y = "SST in Celsius", caption = caption) +
     year_axis(sub$year)

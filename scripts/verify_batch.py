@@ -19,24 +19,27 @@ import time
 import urllib.request
 from pathlib import Path
 
-# dataset id -> (erddap dataset, variable, time-of-day on its axis)
+# dataset id -> (erddap dataset, variable, time-of-day on its axis, zlev slot)
 DATASETS = {
-    "mur_okhotsk": ("jplMURSST41", "analysed_sst", "09:00:00Z"),
-    "oisst_remote": ("ncdcOisst21Agg_LonPM180", "sst", "12:00:00Z"),
+    "mur_okhotsk": ("jplMURSST41", "analysed_sst", "09:00:00Z", ""),
+    "oisst_remote": ("ncdcOisst21Agg_LonPM180", "sst", "12:00:00Z", "%5B(0.0)%5D"),
 }
+# the batch CSV's `dataset` column -> dataset id (MUR rows can carry OISST
+# values where MUR showed false summer ice; those are checked against OISST)
+TAG = {"MUR": "mur_okhotsk", "OISST": "oisst_remote"}
 ERDDAP = "https://coastwatch.pfeg.noaa.gov/erddap/griddap"
 TOL = 0.001          # the app rounds to 3 dp; anything above this is a real disagreement
 RETRIES, BACKOFF_S = 4, 20
 
 
-def fetch(ds, var, tod, lat, lon, date):
-    url = (f"{ERDDAP}/{ds}.csv?{var}%5B({date}T{tod})%5D"
+def fetch(ds, var, tod, z, lat, lon, date):
+    url = (f"{ERDDAP}/{ds}.csv?{var}%5B({date}T{tod})%5D{z}"
            f"%5B({lat})%5D%5B({lon})%5D")
     for attempt in range(RETRIES):
         try:
             raw = urllib.request.urlopen(url, timeout=90).read().decode()
             last = [l for l in raw.strip().split("\n") if l][-1].split(",")
-            return float(last[3]), float(last[1]), float(last[2])
+            return float(last[-1]), float(last[-3]), float(last[-2])  # value, lat, lon
         except Exception as e:
             if attempt == RETRIES - 1:
                 raise
@@ -51,7 +54,7 @@ def main():
     if dsid not in DATASETS:
         sys.exit(f"no verification route for dataset {dsid!r} "
                  f"(known: {', '.join(DATASETS)})")
-    ds, var, tod = DATASETS[dsid]
+    ds = DATASETS[dsid][0]
 
     rows = list(csv.DictReader(path.open(encoding="utf-8")))
     print(f"{'point':28} {'date':11} {'app':>8} {'erddap':>8} {'diff':>7}  cell used")
@@ -60,7 +63,8 @@ def main():
         lat, lon, date, app = (float(r["lat"]), float(r["lon"]), r["date"],
                                float(r["value"]))
         try:
-            val, glat, glon = fetch(ds, var, tod, lat, lon, date)
+            val, glat, glon = fetch(*DATASETS[TAG.get(r.get("dataset"), dsid)],
+                                    lat, lon, date)
         except Exception as e:
             print(f"{r['label'][:28]:28} {date:11} {app:8.3f} {'--':>8} {'--':>7}  "
                   f"UNVERIFIED: {str(e)[:40]}")
