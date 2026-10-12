@@ -109,9 +109,13 @@ def _derive_frame(raw, wanted):
     df = df.sort_values("date")
     df["sst_celsius"] = df["value"]
     df["md"] = df["date"].dt.strftime("%m-%d")
-    df["sst_anomaly"] = df["sst_celsius"] - df.groupby("md")["sst_celsius"].transform("mean")
+    _add_anomaly(df)
     df["date"] = df["date"].dt.strftime("%Y-%m-%d")
     return df
+
+
+def _add_anomaly(df):
+    df["sst_anomaly"] = df["sst_celsius"] - df.groupby("md")["sst_celsius"].transform("mean")
 
 
 def fetch_point_frame(ds, lat, lon, var, wanted_dates):
@@ -162,6 +166,55 @@ def point_frame_cached(ds, dataset_id, lat, lon, var, wanted_dates, refresh=Fals
         SERIES_DIR.mkdir(exist_ok=True)
         have.to_csv(path, index=False)
     return _derive_frame(have, wanted), not missing
+
+
+# ------------------------------------------------ MUR false summer ice
+# MUR takes its ice from coarse OSI SAF passive microwave, so land/water-mixed
+# footprints in narrow straits read as ice and MUR pins SST to -1.8 C -- e.g.
+# Lazarev Cape, 2016-05-25..07-31 (kb note sst/dataset-compare). In May-Sep,
+# when OISST (different ice input) shows no ice at the same date and its
+# nearest ocean cell, the MUR value is treated as no data and OISST's SST is
+# used instead; the `dataset` column says which source each value came from.
+
+DATASET_TAG = {"mur_okhotsk": "MUR", "oisst_remote": "OISST"}
+ICE_FALLBACK_MONTHS = range(5, 10)  # May..Sep
+
+
+def apply_ice_fallback(df, mur_ice, oisst_ice, oisst_sst):
+    """Pure rule. df: derived MUR frame with a `dataset` column; the three
+    dicts map ISO date -> value, a missing date meaning NaN (no ice / no data).
+    ponytail: MUR sets mask=9 exactly where it has a sea_ice_fraction, so
+    fraction > 0 stands in for mask == 9 without fetching the mask too."""
+    df = df.copy()
+    month = df["date"].str[5:7].astype(int)
+    swap = (month.isin(ICE_FALLBACK_MONTHS)
+            & (df["date"].map(mur_ice).fillna(0) > 0)
+            & ~(df["date"].map(oisst_ice).fillna(0) > 0))
+    df.loc[swap, "sst_celsius"] = df.loc[swap, "date"].map(oisst_sst)
+    df.loc[swap, "value"] = df.loc[swap, "sst_celsius"]
+    df.loc[swap, "dataset"] = DATASET_TAG["oisst_remote"]
+    df = df.dropna(subset=["sst_celsius"])  # OISST had nothing either: no data
+    _add_anomaly(df)
+    return df
+
+
+def mur_ice_fallback(df, lat, lon, refresh=False):
+    """Fetch what apply_ice_fallback needs (only for May-Sep dates, and OISST
+    only for MUR's ice days) through the same per-point series cache."""
+    summer = [d for d in df["date"] if int(d[5:7]) in ICE_FALLBACK_MONTHS]
+    if not summer:
+        return df
+
+    def series(dsid, var, dates):
+        f, _ = point_frame_cached(D.get_dataset(dsid), dsid, lat, lon, var, dates, refresh)
+        return {} if f is None else dict(zip(f["date"], f["value"]))
+
+    mur_ice = series("mur_okhotsk", "sea_ice_fraction", summer)
+    iced = sorted(d for d, v in mur_ice.items() if v > 0)
+    if not iced:
+        return df
+    return apply_ice_fallback(df, mur_ice, series("oisst_remote", "ice", iced),
+                              series("oisst_remote", "sst", iced))
 
 
 def _describe_dates(dates):
@@ -231,11 +284,12 @@ def render_pdf(df, lat, lon, label, ds_name, dataset_id, date_summary, on_progre
     tmpdir = Path(tempfile.mkdtemp(prefix="sst_report_"))
     try:
         csv_path = tmpdir / "data.csv"
-        df[["date", "sst_celsius", "sst_anomaly"]].to_csv(csv_path, index=False)
+        df[["date", "sst_celsius", "sst_anomaly", "dataset"]].to_csv(csv_path, index=False)
         rendered = _quarto_render(TEMPLATE, {
             "title": f"SST Analysis For {label}",
             "subtitle": f"{ds_name} \u00b7 {date_summary}",
             "coords": _fmt_coords(lat, lon), "source": csv_path,
+            "dataset": DATASET_TAG.get(dataset_id, dataset_id),
         }, tmpdir, on_progress)
 
         safe_name = _SAFE.sub("_", label).strip("_") or "point"
@@ -399,7 +453,7 @@ def _spread(pos, min_d, iters=60):
 
 
 def render_compare_pdf(rows, ds_name, dataset_id, date_summary, on_progress=None):
-    """rows: DataFrame with lat, lon, label, date, value (the batch CSV).
+    """rows: DataFrame with lat, lon, label, date, value, dataset (the batch CSV).
     Needs >= 2 labels. Returns the final Path under library/reports/."""
     pts = (rows.groupby("label", sort=False)[["lat", "lon"]].first()
                .sort_values("lat", ascending=False).reset_index())  # north first
@@ -418,13 +472,14 @@ def render_compare_pdf(rows, ds_name, dataset_id, date_summary, on_progress=None
         pts[["n", "label", "colour", "px", "py"]].to_csv(tmpdir / "points.csv", index=False)
         csv_path = tmpdir / "data.csv"
         rows.merge(pts[["label", "n", "colour"]], on="label")[
-            ["n", "label", "colour", "date", "value"]].to_csv(csv_path, index=False)
+            ["n", "label", "colour", "date", "value", "dataset"]].to_csv(csv_path, index=False)
         rendered = _quarto_render(COMPARE_TEMPLATE, {
             "title": f"SST Comparison, {len(pts)} Points",
             "subtitle": f"{ds_name} \u00b7 {date_summary}",
             "source": csv_path, "map": tmpdir / "map.png",
             "points": tmpdir / "points.csv", "strip": tmpdir / "strip.rgb",
             "strip_w": sw, "strip_h": sh,
+            "dataset": DATASET_TAG.get(dataset_id, dataset_id),
         }, tmpdir, on_progress)
         dest = REPORTS_DIR / f"comparison_{len(pts)}pts_{dataset_id}_{uuid.uuid4().hex[:6]}.pdf"
         shutil.move(str(rendered), str(dest))
@@ -483,10 +538,15 @@ def start_batch_job(dataset_id, points, generate_pdf, refresh_data=False,
                     ds, dataset_id, p["lat"], p["lon"], var, p["dates"],
                     refresh=refresh_data)
                 entry["from_cache"] = from_cache
-                if df is None:
+                if df is not None:
+                    df["dataset"] = DATASET_TAG.get(dataset_id, dataset_id)
+                    if dataset_id == "mur_okhotsk":
+                        df = mur_ice_fallback(df, p["lat"], p["lon"], refresh_data)
+                if df is None or df.empty:
                     raise ValueError("no data for these dates")
                 for _, r in df.iterrows():
-                    rows.append([p["lat"], p["lon"], p["label"], r["date"], r["sst_celsius"]])
+                    rows.append([p["lat"], p["lon"], p["label"], r["date"],
+                                 r["sst_celsius"], r["dataset"]])
                 if generate_pdf:
                     entry["stage"] = "rendering"
                     pdf = render_pdf(df, p["lat"], p["lon"], p["label"], ds.name,
@@ -512,7 +572,7 @@ def start_batch_job(dataset_id, points, generate_pdf, refresh_data=False,
 
         if rows:
             csv_path = DOWNLOADS_DIR / f"sst_batch_{job_id}.csv"
-            frame = pd.DataFrame(rows, columns=["lat", "lon", "label", "date", "value"])
+            frame = pd.DataFrame(rows, columns=["lat", "lon", "label", "date", "value", "dataset"])
             frame.to_csv(csv_path, index=False)
             job["csv_url"] = f"/library/downloads/{csv_path.name}"
             if generate_compare and frame["label"].nunique() >= 2:

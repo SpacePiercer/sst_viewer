@@ -22,6 +22,7 @@ params:
   strip: ""
   strip_w: 0
   strip_h: 0
+  dataset: "MUR"
 ---
 
 ```{r setup, include=FALSE}
@@ -49,6 +50,15 @@ n_years <- length(yrs)
 n_md    <- length(unique(data$md))
 caption <- "Based on SST data fetched live via sst_viewer"
 
+# values taken from another dataset (MUR false summer ice -> OISST): ringed in
+# the charts, starred in the table, listed under "Substituted values"
+data$sub <- data$dataset != params$dataset
+n_sub <- sum(data$sub)
+if (n_sub) caption <- paste0(caption, "\nPurple ring / * = OISST value used instead of MUR (false summer ice)")
+sub_ring <- function(d, x, y) if (any(d$sub))
+  geom_point(data = d[d$sub, ], aes(x = {{ x }}, y = {{ y }}), inherit.aes = FALSE,
+             shape = 21, size = 4.5, stroke = 1.1, colour = "#9b30d9")
+
 # the map strip arrives as raw RGB bytes: base R has no PNG reader
 sw <- as.integer(params$strip_w); sh <- as.integer(params$strip_h)
 b  <- matrix(as.integer(readBin(params$strip, "raw", sw * sh * 3)), nrow = 3)
@@ -71,13 +81,26 @@ below.
 
 ![](`r params$map`){height=5in fig-align="center"}
 
+```{r substituted, eval = n_sub > 0, results = "asis"}
+cat("\n# Substituted values\n\n",
+    "In May-September MUR sometimes flags open water as sea ice (its ice input,",
+    "OSI SAF passive microwave, mistakes land/water-mixed coastal pixels for ice)",
+    "and pins SST to -1.8 °C. On these dates OISST v2.1 showed no ice at its",
+    "nearest ocean cell, so its SST is used instead. They are ringed in purple",
+    "in the charts and starred in the table.\n\n")
+st <- data[data$sub, ] %>% arrange(n, date) %>%
+  transmute(Point = as.character(key), Date = format(date), Source = dataset,
+            `SST (°C)` = sprintf("%.2f", value))
+cat(knitr::kable(st, format = "latex", booktabs = TRUE), sep = "\n")
+```
+
 # Mean SST per point and year
 
 ```{r table, fig.height = 0.45 * nrow(pp) + 1.4, fig.width = 7}
-means <- data %>% group_by(key, year) %>% summarise(sst = mean(value, na.rm = TRUE), .groups = "drop")
+means <- data %>% group_by(key, year) %>% summarise(sst = mean(value, na.rm = TRUE), sub = any(sub), .groups = "drop")
 ggplot(means, aes(factor(year), key, fill = sst)) +
   geom_tile(colour = "white", linewidth = 0.8) +
-  geom_text(aes(label = sprintf("%.1f", sst)), size = 3.6) +
+  geom_text(aes(label = paste0(sprintf("%.1f", sst), ifelse(sub, "*", ""))), size = 3.6) +
   scale_fill_distiller(palette = "RdYlBu", direction = -1, name = "°C") +
   scale_y_discrete(limits = rev(levels(data$key))) +
   labs(x = NULL, y = NULL,
@@ -100,7 +123,7 @@ if (n_md > 1) {
 
 ```{r single-day, eval = n_md == 1, fig.width = 7, fig.height = 4}
 ggplot(data, aes(year, value, colour = factor(n))) +
-  geom_line(linewidth = 0.7) + geom_point(size = 2) +
+  geom_line(linewidth = 0.7) + geom_point(size = 2) + sub_ring(data, year, value) +
   scale_x_continuous(breaks = yrs) +
   scale_colour_manual(values = colours, labels = pp$key, name = NULL) +
   labs(x = NULL, y = "SST (°C)", caption = caption) +
@@ -117,7 +140,7 @@ line_fig <- function(d, yr) {
   ends$ly <- ends$value
   for (i in seq_len(nrow(ends))[-1]) ends$ly[i] <- max(ends$ly[i], ends$ly[i - 1] + gap)
   chart <- ggplot(d, aes(day, value, colour = factor(n))) +
-    geom_line(linewidth = 0.8) +
+    geom_line(linewidth = 0.8) + sub_ring(d, day, value) +
     geom_text(data = ends, aes(x = day, y = ly, label = n), nudge_x = 0.5,
               hjust = 0, size = 3.6, fontface = "bold") +
     scale_colour_manual(values = colours, guide = "none") +
