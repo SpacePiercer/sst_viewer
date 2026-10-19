@@ -26,3 +26,7 @@ env/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# session progress logs and roadmap, kept local
+progress/
+docs/ROADMAP.md
