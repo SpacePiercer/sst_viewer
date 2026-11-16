@@ -139,6 +139,7 @@ const I18N = {
     loading: "loading…", land: "land",
     loading_dates: "loading dataset dates…", remote_fetch: "fetching remote field…",
     add_to_data: "Add to Data tab",
+    coord_ph: "lat, lon", coord_go: "Go", coord_bad: "Enter lat, lon in degrees (lat −90..90, lon −180..180)",
     sst: "SST", anomaly: "anomaly", error: "error", ice: "ice", none: "none",
     no_dates: "no dates in range", rendering: "rendering GIF on server…",
     snapped: (a, b) => `no data for ${a}, snapped to ${b}`,
@@ -235,6 +236,7 @@ const I18N = {
     loading: "загрузка…", land: "суша",
     loading_dates: "загрузка списка дат…", remote_fetch: "загрузка поля с сервера…",
     add_to_data: "Добавить во вкладку «Данные»",
+    coord_ph: "широта, долгота", coord_go: "Перейти", coord_bad: "Введите широту, долготу в градусах (широта −90..90, долгота −180..180)",
     sst: "ТПМ", anomaly: "аномалия", error: "ошибка", ice: "лёд", none: "нет",
     no_dates: "нет дат в диапазоне", rendering: "сервер собирает GIF…",
     snapped: (a, b) => `нет данных на ${a}, взято ${b}`,
@@ -1533,12 +1535,37 @@ addEventListener("keydown", e => {
 });
 
 // ---------------------------------------------------------- click inspect
-map.on("click", async e => {
+map.on("click", e => {
   if (draw) { drawClick(e.latlng); return; }
   if (measuring) { measureClick(e.latlng); return; }
-  const { lat, lng } = e.latlng;
+  showPointPopup(e.latlng);
+});
+
+// "lat, lon" / "lat lon" / "lat; lon" (decimal degrees) -> [lat, lon] or null
+function parseLatLon(s) {
+  const p = String(s).trim().replace(/;/g, " ").replace(/,/g, " ").split(/\s+/);
+  if (p.length !== 2) return null;
+  const [lat, lon] = p.map(Number);
+  if (!p.every(x => /^[+-]?(\d+\.?\d*|\.\d+)$/.test(x)) || Math.abs(lat) > 90 || Math.abs(lon) > 180) return null;
+  return [lat, lon];
+}
+let coordMarker = null;
+function goToCoord() {
+  const err = $("coordErr"), ll = parseLatLon($("coordInput").value);
+  err.textContent = ll ? "" : t("coord_bad");
+  if (!ll) return;
+  if (coordMarker) coordMarker.remove();
+  coordMarker = L.marker(ll).addTo(map);
+  map.setView(ll, Math.max(map.getZoom(), 6));
+  showPointPopup(L.latLng(ll));
+}
+$("coordGo").onclick = goToCoord;
+$("coordInput").addEventListener("keydown", e => { if (e.key === "Enter") goToCoord(); });
+
+async function showPointPopup(latlng) {
+  const { lat, lng } = latlng;
   const lon = normLon(lng);
-  const pop = L.popup().setLatLng(e.latlng).setContent(t("loading")).openOn(map);
+  const pop = L.popup().setLatLng(latlng).setContent(t("loading")).openOn(map);
   try {
     const a = await fetchJSON(`/api/point?lat=${lat}&lon=${lon}&date=${state.date}&dataset=${state.dataset}`);
     if (a.land) { pop.setContent(t("land")); return; }
@@ -1558,7 +1585,7 @@ map.on("click", async e => {
     html += `<button onclick="addPointToData(${lat.toFixed(3)},${lon.toFixed(3)})">${t("add_to_data")}</button>`;
     pop.setContent(html);
   } catch (err) { pop.setContent("error: " + err.message.slice(0, 200)); }
-});
+}
 
 /* Date spec grammar, used internally by the Data tab's per-coordinate date
    builder (resolveRowDates serializes structured UI state to this grammar
