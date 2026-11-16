@@ -1,4 +1,4 @@
-/* SST Viewer frontend. Plain Leaflet + Chart.js, no build step. */
+/* SST Viewer frontend. Plain Leaflet, no build step. */
 "use strict";
 
 const $ = id => document.getElementById(id);
@@ -114,7 +114,7 @@ const I18N = {
     tip_health: "The dots under the title show whether each source is reachable right now — hover one for latency and the last error.",
     hl_cause: "ERDDAP status", hl_status_stale: "status page unreachable",
     hl_inherited: "not checked separately — the server it lives on is down",
-    tip_global: "Point charts and CSV export work for any coordinates on the globe. The map box only limits the drawn overlay.",
+    tip_global: "CSV export works for any coordinates on the globe. The map box only limits the drawn overlay.",
     tip_sameday: "For a year-on-year animation use “same day each year” instead of a 365-day step — it stays aligned across leap years.",
     tip_data: "In the Data tab one row can repeat the same calendar days across many years — five days across 24 years is a single set.",
     tip_reports: "Tick “Also generate PDF(s)” for a per-point report. The template adapts to which days and years you picked.",
@@ -124,7 +124,7 @@ const I18N = {
     sec_tools: "Tools", help_tools: "Distance measurement and extras.",
     btn_measure: "📏 Measure distance",
     lbl_ice: "ice (≥15%)", lbl_nodata: "no data",
-    sec_areas: "Saved areas", help_areas: "Draw a point, rectangle, circle or polygon on the map and save it with the current dataset/variable/date/scale. From the list you can jump back to it, make cropped snapshots or GIFs, and chart the spatial mean.",
+    sec_areas: "Saved areas", help_areas: "Draw a point, rectangle, circle or polygon on the map and save it with the current dataset/variable/date/scale. From the list you can jump back to it, make cropped snapshots or GIFs.",
     btn_draw_point: "• Point", btn_draw_rect: "▭ Rectangle", btn_draw_circle: "◯ Circle", btn_draw_poly: "⬠ Polygon",
     hint_point: "click the map to place the point",
     hint_rect: "click two opposite corners",
@@ -133,15 +133,14 @@ const I18N = {
     area_name_prompt: "Area name:", rename_prompt: "New name:",
     confirm_delete: n => `Delete area "${n}" and its media?`,
     confirm_media_delete: n => `Delete file "${n}"?`,
-    btn_goto: "Go to", btn_snapshot: "PNG", btn_area_gif: "GIF", btn_area_chart: "Chart",
+    btn_goto: "Go to", btn_snapshot: "PNG", btn_area_gif: "GIF",
     lbl_show_areas: "show on map", no_areas: "no saved areas yet",
-    generating: "generating…", mean_suffix: "area mean",
-    sec_charts: "Charts", x_date: "x = date", x_doy: "x = day of year (one line per year)",
-    btn_clear: "Clear", loading: "loading…", land: "land",
+    generating: "generating…",
+    loading: "loading…", land: "land",
     loading_dates: "loading dataset dates…", remote_fetch: "fetching remote field…",
-    chart_point: "Chart this point",
+    add_to_data: "Add to Data tab",
     sst: "SST", anomaly: "anomaly", error: "error", ice: "ice", none: "none",
-    day: "day", yaxis: "SST (°C)", no_dates: "no dates in range", rendering: "rendering GIF on server…",
+    no_dates: "no dates in range", rendering: "rendering GIF on server…",
     snapped: (a, b) => `no data for ${a}, snapped to ${b}`,
     lbl_coords_dataset: "dataset (for these points)",
     sec_coords: "Coordinates", help_coords: "Paste coordinates, one \"lat, lon\" pair per line, then Add. Each row gets its own expandable date form — build a list of specific dates and/or date ranges, optionally repeated across years (either a year range or explicit non-consecutive years). Check the rows you want, then Download: builds one combined CSV, and optionally renders a PDF report per checked coordinate (RProject3-style trend analysis) as a background job.",
@@ -211,7 +210,7 @@ const I18N = {
     tip_health: "Точки под заголовком показывают, доступен ли сейчас каждый источник — наведите курсор, чтобы увидеть задержку и последнюю ошибку.",
     hl_cause: "состояние ERDDAP", hl_status_stale: "страница состояния недоступна",
     hl_inherited: "отдельно не проверялся — недоступен сервер, на котором он размещён",
-    tip_global: "Графики по точке и экспорт CSV работают для любых координат на планете. Рамка карты ограничивает только отрисовку слоя.",
+    tip_global: "Экспорт CSV работает для любых координат на планете. Рамка карты ограничивает только отрисовку слоя.",
     tip_sameday: "Для анимации по годам используйте «тот же день каждый год» вместо шага в 365 дней — так дата не съедет из-за високосных лет.",
     tip_data: "На вкладке «Данные» одна строка может повторять одни и те же календарные дни во многих годах — пять дней за 24 года это один набор.",
     tip_reports: "Отметьте «Также создать PDF», чтобы получить отчёт по каждой точке. Шаблон подстраивается под выбранные дни и годы.",
@@ -221,7 +220,7 @@ const I18N = {
     sec_tools: "Инструменты", help_tools: "Измерение расстояний и прочее.",
     btn_measure: "📏 Измерить расстояние",
     lbl_ice: "лёд (≥15%)", lbl_nodata: "нет данных",
-    sec_areas: "Сохранённые области", help_areas: "Нарисуйте точку, прямоугольник, круг или полигон на карте и сохраните вместе с текущим набором/переменной/датой/шкалой. Из списка можно вернуться к области, сделать обрезанные снимки или GIF и построить график пространственного среднего.",
+    sec_areas: "Сохранённые области", help_areas: "Нарисуйте точку, прямоугольник, круг или полигон на карте и сохраните вместе с текущим набором/переменной/датой/шкалой. Из списка можно вернуться к области, сделать обрезанные снимки или GIF.",
     btn_draw_point: "• Точка", btn_draw_rect: "▭ Прямоугольник", btn_draw_circle: "◯ Круг", btn_draw_poly: "⬠ Полигон",
     hint_point: "кликните карту, чтобы поставить точку",
     hint_rect: "кликните два противоположных угла",
@@ -230,15 +229,14 @@ const I18N = {
     area_name_prompt: "Название области:", rename_prompt: "Новое название:",
     confirm_delete: n => `Удалить область «${n}» и её файлы?`,
     confirm_media_delete: n => `Удалить файл «${n}»?`,
-    btn_goto: "Перейти", btn_snapshot: "PNG", btn_area_gif: "GIF", btn_area_chart: "График",
+    btn_goto: "Перейти", btn_snapshot: "PNG", btn_area_gif: "GIF",
     lbl_show_areas: "показывать на карте", no_areas: "пока нет сохранённых областей",
-    generating: "создание…", mean_suffix: "среднее по области",
-    sec_charts: "Графики", x_date: "x = дата", x_doy: "x = день года (линия на каждый год)",
-    btn_clear: "Очистить", loading: "загрузка…", land: "суша",
+    generating: "создание…",
+    loading: "загрузка…", land: "суша",
     loading_dates: "загрузка списка дат…", remote_fetch: "загрузка поля с сервера…",
-    chart_point: "График для этой точки",
+    add_to_data: "Добавить во вкладку «Данные»",
     sst: "ТПМ", anomaly: "аномалия", error: "ошибка", ice: "лёд", none: "нет",
-    day: "день", yaxis: "ТПМ (°C)", no_dates: "нет дат в диапазоне", rendering: "сервер собирает GIF…",
+    no_dates: "нет дат в диапазоне", rendering: "сервер собирает GIF…",
     snapped: (a, b) => `нет данных на ${a}, взято ${b}`,
     lbl_coords_dataset: "набор данных (для этих точек)",
     sec_coords: "Координаты", help_coords: "Вставьте координаты, по одной паре «шир., долг.» на строку, затем «Добавить». У каждой строки своя раскрывающаяся форма дат — список конкретных дат и/или диапазонов дат, можно повторить по годам (диапазон лет или явный список несмежных лет). Отметьте нужные строки и нажмите «Скачать»: соберётся один общий CSV, и по желанию для каждой отмеченной координаты будет отрендерен PDF-отчёт (анализ в стиле RProject3) фоновой задачей.",
@@ -276,7 +274,6 @@ function applyLang() {
   $("langBtn").textContent = lang === "en" ? "RU" : "EN";
   if (state.playing) $("playBtn").textContent = t("btn_pause");
   rebuildVarSelect(); updateLegend(); updateStatus();
-  if (chart) { chart.options.scales.y.title.text = t("yaxis"); chart.update(); }
   renderAreaList(); renderRows();
 }
 
@@ -1433,7 +1430,6 @@ function renderAreaList() {
     mk(t("btn_goto"), () => gotoArea(a));
     mk(t("btn_snapshot"), () => areaSnapshot(a, row));
     mk(t("btn_area_gif"), () => areaGif(a, row));
-    mk(t("btn_area_chart"), () => areaChart(a));
     mk("✎", () => renameArea(a));
     mk("✕", () => deleteArea(a));
     div.appendChild(row);
@@ -1506,21 +1502,6 @@ async function areaGif(a, row) {
   $("drawHint").textContent = "";
 }
 
-async function areaChart(a) {
-  ensureChart();
-  const label = `${a.name} — ${t("mean_suffix")} (${a.var})`;
-  const tmp = { label: label + " — " + t("loading"), points: [] };
-  chartSeries.push(tmp); rebuildChart();
-  try {
-    const r = await fetchJSON(`/api/areas/${a.id}/mean_series?dataset=${a.dataset}&var=${a.var}`);
-    tmp.label = label; tmp.points = r.points;
-  } catch (err) {
-    chartSeries.splice(chartSeries.indexOf(tmp), 1);
-    alert(err.message);
-  }
-  rebuildChart();
-}
-
 async function renameArea(a) {
   const name = prompt(t("rename_prompt"), a.name);
   if (!name || !name.trim() || name.trim() === a.name) return;
@@ -1574,112 +1555,11 @@ map.on("click", async e => {
       html += `${t("ice")}: ${a.ice_fraction == null ? t("none") :
         (a.ice_fraction * 100).toFixed(0) + "%"}${a.is_ice ? " ❄" : ""}<br>`;
     }
-    html += `<button onclick="chartPoint(${lat.toFixed(3)},${lon.toFixed(3)})">${t("chart_point")}</button>`;
+    html += `<button onclick="addPointToData(${lat.toFixed(3)},${lon.toFixed(3)})">${t("add_to_data")}</button>`;
     pop.setContent(html);
   } catch (err) { pop.setContent("error: " + err.message.slice(0, 200)); }
 });
 
-// ------------------------------------------------------------------ charts
-const PALETTE = ["#0074d9", "#ff4136", "#2ecc40", "#ff851b", "#b10dc9",
-                 "#39cccc", "#85144b", "#3d9970", "#111111", "#aaaaaa"];
-let chart = null;
-const chartSeries = []; // {label, points:[{date,value}]}
-
-function ensureChart() {
-  $("chartPanel").classList.remove("collapsed");
-  if (chart) return;
-  chart = new Chart($("chart"), {
-    type: "line",
-    data: { datasets: [] },
-    options: {
-      animation: false, responsive: true, maintainAspectRatio: false,
-      parsing: false, normalized: true,
-      scales: {
-        x: { type: "linear", ticks: { callback: v => xTickLabel(v) } },
-        y: { title: { display: true, text: t("yaxis") } },
-      },
-      plugins: {
-        legend: { display: false }, // scrollable HTML legend instead
-        tooltip: { callbacks: { title: it => xTickLabel(it[0].parsed.x) } },
-      },
-      elements: { point: { radius: 2 } },
-    },
-  });
-}
-const DAY = 86400000;
-function xTickLabel(v) {
-  return $("xMode").value === "doy" ? t("day") + " " + Math.round(v)
-    : new Date(v * DAY).toISOString().slice(0, 10);
-}
-function doy(iso) {
-  const d = new Date(iso + "T00:00:00Z");
-  return Math.round((d - new Date(Date.UTC(d.getUTCFullYear(), 0, 0))) / DAY);
-}
-
-function rebuildHtmlLegend() {
-  const box = $("chartLegend");
-  box.innerHTML = "";
-  chart.data.datasets.forEach((ds, i) => {
-    const item = document.createElement("span");
-    item.className = "legendItem" + (ds.hidden ? " off" : "");
-    item.innerHTML = `<i style="background:${ds.borderColor}"></i>${ds.label}`;
-    item.onclick = () => {
-      ds.hidden = !ds.hidden;
-      chart.update(); rebuildHtmlLegend();
-    };
-    box.appendChild(item);
-  });
-}
-
-function rebuildChart() {
-  ensureChart();
-  const mode = $("xMode").value;
-  const ds = [];
-  let c = 0;
-  for (const s of chartSeries) {
-    if (mode === "date") {
-      ds.push({
-        label: s.label, borderColor: PALETTE[c % 10], backgroundColor: PALETTE[c % 10],
-        data: s.points.filter(p => p.value != null)
-          .map(p => ({ x: Date.parse(p.date) / DAY, y: p.value })),
-        spanGaps: false, borderWidth: 1.5,
-      });
-      c++;
-    } else {
-      const byYear = {};
-      for (const p of s.points) {
-        if (p.value == null) continue;
-        (byYear[p.date.slice(0, 4)] ??= []).push({ x: doy(p.date), y: p.value });
-      }
-      for (const [y, pts] of Object.entries(byYear)) {
-        ds.push({ label: `${s.label} ${y}`, borderColor: PALETTE[c % 10],
-                  backgroundColor: PALETTE[c % 10], data: pts, borderWidth: 1.2 });
-        c++;
-      }
-    }
-  }
-  chart.data.datasets = ds;
-  chart.update();
-  rebuildHtmlLegend();
-}
-
-window.chartPoint = async (lat, lon, label, spec, dsid, varName) => {
-  ensureChart();
-  dsid = dsid || state.dataset;
-  varName = varName || state.var;
-  label = label || `${lat.toFixed(2)}°, ${lon.toFixed(2)}° (${state.meta[dsid].name} ${varName})`;
-  const tmp = { label: label + " — " + t("loading"), points: [] };
-  chartSeries.push(tmp); rebuildChart();
-  try {
-    tmp.points = await fetchPointSeries(lat, lon, spec, dsid, varName);
-    tmp.label = label;
-  } catch (err) {
-    chartSeries.splice(chartSeries.indexOf(tmp), 1);
-    alert(err.message.slice(0, 300));
-  }
-  rebuildChart();
-  map.closePopup();
-};
 /* Date spec grammar, used internally by the Data tab's per-coordinate date
    builder (resolveRowDates serializes structured UI state to this grammar
    rather than users typing it):
@@ -1746,21 +1626,13 @@ function dateRuns(dates) { // consecutive-day runs -> [[first, last], ...]
   return runs;
 }
 
-async function fetchPointSeries(lat, lon, spec, dsid, varName) {
-  dsid = dsid || state.dataset;
-  varName = varName || state.var;
-  const base = `/api/series?lat=${lat}&lon=${lon}&var=${varName}&dataset=${dsid}`;
-  if (!spec) return (await fetchJSON(base)).points;
-  let runs = dateRuns(spec);
-  // ponytail: many sparse runs -> one min..max request, filter client-side
-  if (runs.length > 30) runs = [[spec[0], spec[spec.length - 1]]];
-  const want = new Set(spec), pts = [];
-  for (const [a, b] of runs) {
-    const r = await fetchJSON(`${base}&start=${a}&end=${b}`);
-    for (const p of r.points) if (want.has(p.date)) pts.push(p);
-  }
-  return pts;
-}
+// map-popup button: feed the clicked point through the Data tab's own add path
+window.addPointToData = (lat, lon) => {
+  $("coordsAdd").value = `${lat}, ${lon}`;
+  addCoordsFromText();
+  setTab("data");
+  map.closePopup();
+};
 
 // the coordinate tool has its own dataset (default MUR), independent of the map
 const coordsDs = () => $("coordsDataset").value;
@@ -2091,16 +1963,6 @@ async function pollBatchJob(id) {
   }
 }
 
-function chartCsv() {
-  let rows = ["series,date,value"];
-  for (const s of chartSeries)
-    for (const p of s.points)
-      rows.push(`"${s.label}",${p.date},${p.value ?? ""}`);
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(new Blob([rows.join("\n")], { type: "text/csv" }));
-  a.download = "sst_chart_data.csv"; a.click();
-}
-
 // -------------------------------------------------------------- wire up UI
 $("langBtn").onclick = () => { lang = lang === "en" ? "ru" : "en"; localStorage.setItem("sst_lang", lang); applyLang(); };
 $("varSelect").onchange = e => { state.var = e.target.value; refreshOverlay(); scheduleResolution(); };
@@ -2176,16 +2038,6 @@ $("drawPointBtn").onclick = () => startDraw("point");
 $("drawRectBtn").onclick = () => startDraw("rect");
 $("drawCircleBtn").onclick = () => startDraw("circle");
 $("drawPolyBtn").onclick = () => startDraw("polygon");
-$("xMode").onchange = rebuildChart;
-$("chartPngBtn").onclick = () => {
-  if (!chart) return;
-  const a = document.createElement("a");
-  a.href = chart.toBase64Image(); a.download = "sst_chart.png"; a.click();
-};
-$("chartCsvBtn").onclick = chartCsv;
-$("chartClearBtn").onclick = () => { chartSeries.length = 0; if (chart) rebuildChart(); };
-$("chartCollapseBtn").onclick = () => $("chartPanel").classList.toggle("collapsed");
-
 // ------------------------------------------------------------------- init
 // ------------------------------------------------------------ loading screen
 // Upper bound on how long the splash waits for the first health sweep. There
