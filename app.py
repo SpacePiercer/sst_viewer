@@ -168,17 +168,6 @@ def api_point(lat: float, lon: float, date: str, dataset: str = "oisst_remote"):
     return _remote_guard(ds.point_values, lat, lon, date)
 
 
-@app.get("/api/series")
-def api_series(lat: float, lon: float, var: str = "sst",
-               dataset: str = "oisst_remote",
-               start: str | None = None, end: str | None = None):
-    ds = _ds(dataset)
-    if var not in ds.variables and var != ds.ice_var:
-        raise HTTPException(400, f"unknown variable {var!r}")
-    pts = _remote_guard(ds.point_series, lat, lon, var, start, end)
-    return {"lat": lat, "lon": lon, "var": var, "dataset": dataset, "points": pts}
-
-
 @app.post("/api/batch_series")
 def api_batch_series(payload: dict = Body(...)):
     """One date, many points: sample all coordinates from a single gridded box
@@ -455,19 +444,6 @@ def api_area_gif(area_id: str, start: str, end: str, var: str = "sst",
     _remote_guard(D.export_gif, dataset, dates, var, vmin, vmax,
                   D.area_bbox(a["geom"]), fps, out)
     return {"name": out.name, "frames": len(dates)}
-
-
-@app.get("/api/areas/{area_id}/mean_series")
-def api_area_mean_series(area_id: str, var: str = "sst",
-                         dataset: str = "oisst_remote",
-                         start: str | None = None, end: str | None = None):
-    with _AREAS_LOCK:
-        a = _find_area(_load_areas(), area_id)
-    ds = _ds(dataset)
-    if var not in ds.variables and var != ds.ice_var:
-        raise HTTPException(400, f"unknown variable {var!r}")
-    pts = _remote_guard(D.area_mean_series, dataset, a["geom"], var, start, end)
-    return {"area": area_id, "var": var, "dataset": dataset, "points": pts}
 
 
 app.mount("/library", StaticFiles(directory=D.LIBRARY), name="library")
