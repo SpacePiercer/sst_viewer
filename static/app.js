@@ -559,9 +559,9 @@ function viewBbox() {
   return [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()];
 }
 
-function scaleIsFixed() {
+function scaleIsFixed(radioOnly) {
   return document.querySelector("input[name=scaleMode]:checked").value === "fixed"
-         || state.comparing || state.playing;
+         || (!radioOnly && (state.comparing || state.playing));
 }
 
 async function refreshOverlay() {
@@ -968,11 +968,40 @@ async function preloadTiles(gen, dates, dsid) {
   return true;
 }
 
-async function preloadFrames(gen) {
+// Auto scale across a whole timelapse: the min of every frame's own auto low and
+// the max of their highs (X-Vmin/X-Vmax of the unlocked render). Without it the
+// vmin/vmax inputs keep the range of whichever date was shown last, and a warm
+// frame renders all one colour. Returns null if no frame could be fetched.
+function mergeRange(ranges) {
+  const r = ranges.filter(x => x && isFinite(x[0]) && isFinite(x[1]));
+  return r.length ? [Math.min(...r.map(x => x[0])), Math.max(...r.map(x => x[1]))] : null;
+}
+async function framesRange(dates, gen) {
+  const out = [], queue = dates.slice();
+  const worker = async () => {
+    while (queue.length && (gen === undefined || gen === tlGen)) {
+      try { const f = await frameURL(overlayURL(queue.shift(), false)); out.push([+f.vmin, +f.vmax]); }
+      catch { /* frame stays missing */ }
+    }
+  };
+  await Promise.all([worker(), worker(), worker()]);
+  return mergeRange(out);
+}
+
+async function preloadFrames(gen, auto) {
   const prog = $("tlProg");
   prog.classList.remove("hidden");
   prog.max = tlDates.length; prog.value = 0;
-  frameCacheCap = Math.max(80, tlDates.length + 8);
+  frameCacheCap = Math.max(80, 2 * tlDates.length + 8);
+  if (auto) {
+    $("tlInfo").textContent = t("tl_loading");
+    const r = await framesRange(tlDates, gen);
+    if (gen !== tlGen) return false;
+    if (r) {
+      state.vmin = r[0]; state.vmax = r[1];
+      $("vmin").value = r[0]; $("vmax").value = r[1];
+    }
+  }
   const queue = tlDates.slice();
   let done = 0;
   const worker = async () => {
@@ -1000,6 +1029,7 @@ async function togglePlay() {
   const gen = ++tlGen;
   state.playing = true;                      // also freezes the color scale
   $("playBtn").textContent = t("btn_pause");
+  const wasAuto = !scaleIsFixed(true);       // Fixed: user's typed min/max win
   document.querySelector("input[name=scaleMode][value=fixed]").checked = true;
   state.vmin = +$("vmin").value; state.vmax = +$("vmax").value;
   let dates;
@@ -1015,7 +1045,7 @@ async function togglePlay() {
   scrub.classList.remove("hidden");
   if (!await preloadTiles(gen, dates, tlDs())) { stopPlay(); return; }
   if (gen !== tlGen) return;
-  if (!await preloadFrames(gen)) return;
+  if (!await preloadFrames(gen, wasAuto)) return;
   showFrame(tlIdx);
   tlTimer = setInterval(() => showFrame((tlIdx + 1) % tlDates.length),
                         1000 / +$("fps").value);
@@ -1127,14 +1157,24 @@ async function deleteSelectedArea() {
   await boxApi(`/api/areas/${id}`, { method: "DELETE" }, "");
 }
 
-function exportGif() {
+// Range for a GIF: Fixed -> typed inputs; Auto -> across all the GIF's frames.
+async function gifRange() {
+  if (!scaleIsFixed(true)) {
+    try { const r = await framesRange(await playbackDates()); if (r) return r; }
+    catch { /* fall back to the inputs */ }
+  }
+  return [$("vmin").value, $("vmax").value];
+}
+
+async function exportGif() {
+  const [lo, hi] = await gifRange();
   const b = readBox() || (() => {
     const m = map.getBounds();
     return { w: m.getWest(), s: m.getSouth(), e: m.getEast(), n: m.getNorth() };
   })();
   const bbox = [b.w, b.s, b.e, b.n].map(x => x.toFixed(2)).join(",");
   const u = `/api/export/timelapse?${tlQuery()}` +
-    `&var=${varFor(tlDs())}&vmin=${$("vmin").value}&vmax=${$("vmax").value}` +
+    `&var=${varFor(tlDs())}&vmin=${lo}&vmax=${hi}` +
     `&fps=${$("fps").value}&bbox=${bbox}&dataset=${tlDs()}`;
   $("tlInfo").textContent = t("rendering");
   const a = document.createElement("a");
@@ -1454,11 +1494,12 @@ async function areaGif(a, row) {
   busy(row, true);
   $("drawHint").textContent = t("generating");
   try {
+    const [lo, hi] = await gifRange();
     // an area GIF is built from tlQuery()'s frames, so it follows the same
     // Timelapse-tab dataset picker the main GIF export does
     await fetchJSON(`/api/areas/${a.id}/gif?dataset=${tlDs()}&${tlQuery()}` +
       `&var=${varFor(tlDs())}` +
-      `&vmin=${$("vmin").value}&vmax=${$("vmax").value}&fps=${$("fps").value}`,
+      `&vmin=${lo}&vmax=${hi}&fps=${$("fps").value}`,
       { method: "POST" });
     await refreshAreas();
   } catch (err) { alert(err.message); busy(row, false); }
