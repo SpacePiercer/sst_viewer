@@ -29,6 +29,15 @@ html, body { height: 100%; margin: 0; font: 13px/1.4 system-ui, sans-serif; }
 #statusBar .dmy input[type=number] { font-size: 12px; }
 #statusBar #dateInfo { max-width: 22em; overflow: hidden; text-overflow: ellipsis; }
 #statusBar #dateInfo.err { color: #b10000; }
+#coordBar {
+  position: absolute; top: 46px; left: 50%; transform: translateX(-50%);
+  z-index: 1000; background: rgba(255,255,255,.93); border-radius: 14px;
+  padding: 3px 8px; box-shadow: 0 1px 4px rgba(0,0,0,.3); font-size: 12px;
+  display: flex; gap: 6px; align-items: center;
+}
+#coordBar input { font-size: 12px; }
+#coordErr { color: #b10000; }
+#coordErr:empty { display: none; }
 #statusBar select:disabled { opacity: .5; }
 #tlScrub { margin: 4px 0 2px; }
 #sidebar section { border-top: 1px solid #ddd; padding: 8px 0; }
